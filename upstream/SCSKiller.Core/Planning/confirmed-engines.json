@@ -1,0 +1,48 @@
+{
+  "about": "Unreal versions and engine forks whose root-signature rule (RootSig) a real game has confirmed, so a game on one of them needs no recording and shows no 'not tested' note. version is EngineInfo.Version; fork is EngineInfo.Fork ('GAME_...'), left out for stock Unreal; game and evidence say what confirmed it. Embedded in the app and served at /v1/content/confirmed-engines.json, the same file; the app uses the embedded entries plus the served copy's when it passes ConfirmedEngines.TryParse.",
+  "engines": [
+    {
+      "version": "4.26",
+      "fork": "GAME_FinalFantasy7Rebirth",
+      "game": "FINAL FANTASY VII REBIRTH",
+      "evidence": "Its recording: 994 of 994 root signatures rebuilt byte for byte."
+    },
+    {
+      "version": "4.26",
+      "fork": "GAME_StarWarsJediSurvivor",
+      "game": "STAR WARS Jedi: Survivor",
+      "evidence": "Its recording: 23,626 of 23,626 root signatures rebuilt byte for byte."
+    },
+    {
+      "version": "4.26",
+      "game": "STAR WARS Jedi: Survivor",
+      "evidence": "The stock rule is what rebuilds Jedi: Survivor's and Hogwarts Legacy's recordings; the forks only add tables their own shaders declare."
+    },
+    {
+      "version": "4.27",
+      "fork": "GAME_HogwartsLegacy",
+      "game": "Hogwarts Legacy",
+      "evidence": "Its recording: 54,657 of 54,657 root signatures rebuilt byte for byte."
+    },
+    {
+      "version": "4.27",
+      "game": "Hogwarts Legacy",
+      "evidence": "The stock rule is what rebuilds Jedi: Survivor's and Hogwarts Legacy's recordings; the forks only add tables their own shaders declare."
+    },
+    {
+      "version": "5.1",
+      "game": "The Elder Scrolls IV: Oblivion Remastered",
+      "evidence": "Its recording: 21,524 of 21,524 root signatures rebuilt byte for byte."
+    },
+    {
+      "version": "5.4",
+      "game": "SILENT HILL f",
+      "evidence": "Its recording: 9,586 of 9,586 root signatures rebuilt byte for byte."
+    },
+    {
+      "version": "5.6",
+      "game": "SILENT HILL: Townfall",
+      "evidence": "Its recording: 10,932 of 10,932 root signatures rebuilt byte for byte."
+    }
+  ]
+}

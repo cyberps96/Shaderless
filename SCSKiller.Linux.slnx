@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SCSKiller.Linux.App/SCSKiller.Linux.App.csproj" />
+    <Project Path="src/SCSKiller.Linux.Cli/SCSKiller.Linux.Cli.csproj" />
+    <Project Path="src/SCSKiller.Linux.Core/SCSKiller.Linux.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SCSKiller.Linux.Tests/SCSKiller.Linux.Tests.csproj" />
+  </Folder>
+</Solution>

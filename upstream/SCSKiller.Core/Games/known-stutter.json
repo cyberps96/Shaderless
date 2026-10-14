@@ -1,0 +1,181 @@
+{
+  "about": "Games with documented shader-compilation stutter. Only entries with a real source: an https link, or \"SCSKiller measurement\" for SCSKiller's own. ids are Game.Id values (steam:<appid>, xbox:<package family>, epic:<app name>, ea:<content id>); name is the fallback, compared letters and digits only, case-insensitive. date = when the entry was last checked. Embedded in the app and served at /v1/content/known-stutter.json, the same file; the app uses the served copy when it passes StutterList.TryParse.",
+  "games": [
+    {
+      "name": "STAR WARS Jedi: Survivor",
+      "ids": ["ea:198300", "steam:1774580"],
+      "severity": "severe",
+      "reason": "Shader-compilation stutter persisted through Patch 4; SCSKiller cut its startup shader compile from 813 s to 3.2 s of compile time",
+      "source": "https://www.dsogaming.com/news/star-wars-jedi-survivor-still-has-traversal-shader-compilation-stutters/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Atomic Heart",
+      "ids": ["steam:668580"],
+      "severity": "moderate",
+      "reason": "Skipping its optional shader precompile causes stutter entering new locations (the director confirmed it)",
+      "source": "https://www.thefpsreview.com/2023/02/10/updated-atomic-heart-pc-requirements-revealed-and-users-will-have-the-option-of-pregame-shader-compilation/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Hogwarts Legacy",
+      "ids": ["steam:990080"],
+      "severity": "moderate",
+      "reason": "Its own \"Preparing Shaders\" step is incomplete: shader and traversal stutter remain",
+      "source": "https://steamcommunity.com/app/990080/discussions/0/3761104682789044584/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "S.T.A.L.K.E.R. 2: Heart of Chornobyl",
+      "ids": ["steam:1643320"],
+      "severity": "severe",
+      "reason": "Severe UE5 shader-compilation hitches; its precompile is incomplete and patch 2.0 made it worse",
+      "source": "https://pixelnitro.com/how-to-fix-shader-compilation-stutter-in-stalker-2-patch-2-0-cost-of-hope-dlc-guide/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Avowed",
+      "ids": [],
+      "severity": "moderate",
+      "reason": "Players still report shader-compilation stutter; a larger driver shader cache helps",
+      "source": "https://steamcommunity.com/app/2457220/discussions/2/800092529560134432/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "The Elder Scrolls IV: Oblivion Remastered",
+      "ids": ["steam:2623190", "xbox:BethesdaSoftworks.ProjectAltar_3275kfvn8vcwc"],
+      "severity": "moderate",
+      "reason": "Compiles shaders once at first launch but not again after a driver update",
+      "source": "https://steamcommunity.com/app/2623190/discussions/0/604155538457019517/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Tiny Tina's Wonderlands",
+      "ids": ["steam:1286680"],
+      "severity": "moderate",
+      "reason": "No shader precompile step; players still report shader-compilation stutter",
+      "source": "https://steamcommunity.com/app/1286680/discussions/0/3806156528948512334/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Borderlands 4",
+      "ids": ["steam:1285190"],
+      "severity": "severe",
+      "reason": "Shader-compilation stutter on first-time events; players raise the driver shader cache to 100 GB",
+      "source": "https://www.pcgamer.com/hardware/i-fixed-borderlands-4s-stuttering-issue-by-upping-my-shader-cache-size-to-100-gb-which-feels-like-something-i-shouldnt-have-to-do-in-a-well-optimised-game/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Black Myth: Wukong",
+      "ids": ["steam:2358720"],
+      "severity": "moderate",
+      "reason": "Both shader-compilation and traversal stutter reported",
+      "source": "https://steamcommunity.com/app/2358720/discussions/0/4763207511837056649/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Wuchang: Fallen Feathers",
+      "ids": [],
+      "severity": "moderate",
+      "reason": "UE5 shader-compilation stutter is a known ongoing issue; patches haven't eliminated it",
+      "source": "https://steamcommunity.com/app/2277560/discussions/0/600785168536448276/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "The Callisto Protocol",
+      "ids": ["steam:1544020"],
+      "severity": "moderate",
+      "reason": "Major shader-compilation stutter returned after patch v3.02; deleting and recompiling the shader cache doesn't fix it",
+      "source": "https://steamcommunity.com/app/1544020/discussions/0/3772364315540199745/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Monster Hunter Wilds",
+      "ids": ["steam:2246340"],
+      "severity": "severe",
+      "reason": "Shaders compile on exit but aren't remapped on next boot, causing on-the-fly shader-compilation stutter until rebuilt (an engine-level cache bug, documented on Proton)",
+      "source": "https://steamcommunity.com/app/2246340/discussions/0/592938395265915162/#c589564502875365030",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "ELDEN RING",
+      "ids": ["steam:1245620"],
+      "severity": "moderate",
+      "reason": "Digital Foundry put its launch pauses down to shader compiles, but Valve found most big hitches on Steam Deck weren't. In one session after compiling, SCSKiller measured 37 in-play frames of 50 ms or more: 2 on a ray tracing pipeline compile, 35 with no compile under them",
+      "source": "https://www.digitalfoundry.net/articles/digitalfoundry-2022-yes-valve-really-did-fix-elden-ring-for-steam-deck",
+      "date": "2026-10-04"
+    },
+    {
+      "name": "FINAL FANTASY VII REBIRTH",
+      "ids": ["steam:2909400"],
+      "severity": "severe",
+      "reason": "SCSKiller measured 73 pipeline compiles that blocked the game for 20 ms or more in 3.3 minutes of play with a cold cache, none after compiling; DX12 shader-compilation stutter in this game is well documented",
+      "source": "https://www.dsogaming.com/mods/modder-attempts-to-fix-the-dx12-shader-compilation-stutters-in-final-fantasy-7-remake-rebirth/",
+      "date": "2026-09-25"
+    },
+    {
+      "name": "Immortals of Aveum",
+      "ids": [],
+      "severity": "moderate",
+      "reason": "UE5's own shader-precompile systems (5.1-5.4) don't work properly without extra developer work, per Digital Foundry - a general UE5 engine gap this game inherits",
+      "source": "https://wccftech.com/unreal-engine-5-shader-compilation-systems-prevent-stuttering-not-work-properly/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Forspoken",
+      "ids": ["steam:1680880"],
+      "severity": "moderate",
+      "reason": "Shader-compilation stutter with no precompile step",
+      "source": "https://www.dsogaming.com/news/forspoken-has-frame-pacing-audio-shader-compilation-stutters-issues/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "Wo Long: Fallen Dynasty",
+      "ids": ["steam:1448440"],
+      "severity": "moderate",
+      "reason": "Stutters the first time an enemy or effect appears, not on repeats",
+      "source": "https://steamcommunity.com/app/1448440/discussions/0/3770113150034247111/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "WILD HEARTS",
+      "ids": ["steam:1938010"],
+      "severity": "moderate",
+      "reason": "Shader and traversal stutter; an 850 MB patch did not fix it",
+      "source": "https://www.dsogaming.com/patches/wild-hearts-gets-a-850mb-patch-on-pc-does-not-fix-its-stuttering-or-optimization-issues/",
+      "date": "2026-09-26"
+    },
+    {
+      "name": "SILENT HILL: Townfall",
+      "ids": ["steam:1636440"],
+      "severity": "severe",
+      "reason": "Heavy shader compilation at startup and on level loads (Digital Foundry Direct)",
+      "source": "https://youtu.be/19qyGXz5FUU?t=1843",
+      "date": "2026-09-29"
+    },
+    {
+      "name": "SILENT HILL f",
+      "ids": ["steam:2947440"],
+      "severity": "moderate",
+      "reason": "Major PSO stutters during play; SCSKiller measured 92 shader stutters on a cold run and 0 after one compile",
+      "source": "https://www.dsogaming.com/pc-performance-analyses/silent-hill-f-benchmarks-pc-performance-analysis/",
+      "date": "2026-10-02"
+    },
+    {
+      "name": "SAND LAND",
+      "ids": ["steam:1979440"],
+      "severity": "severe",
+      "reason": "Shader-compilation stutter remains during play; SCSKiller measured 38 shader stutters (worst 4.6 s) on a cold run and 1 after one compile",
+      "source": "https://www.dsogaming.com/news/sand-land-still-suffers-from-shader-compilation-traversal-stutters-on-pc/",
+      "date": "2026-10-03"
+    },
+    {
+      "name": "The Witcher 3: Wild Hunt",
+      "ids": ["steam:292030"],
+      "severity": "moderate",
+      "reason": "Its DirectX 12 build compiles shaders while you play; SCSKiller measured 9 shader stutters (worst 1.4 s) on a cold run and 0 after one compile",
+      "source": "SCSKiller measurement",
+      "date": "2026-10-03"
+    }
+  ]
+}

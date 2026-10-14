@@ -1,0 +1,16 @@
+SCSKiller
+Copyright (C) 2026 The SCSKiller authors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See LICENSE.
+
+Additional permission under GNU GPL version 3 section 7
+
+If you modify this program, or any covered work, by linking or combining it
+with the Oodle compression library, the Microsoft Windows App SDK (including
+WinUI), or the graphics driver libraries of NVIDIA, AMD or Intel (or modified
+versions of any of these), containing parts covered by the terms of their own
+licenses, the licensors of this program grant you additional permission to
+convey the resulting work.

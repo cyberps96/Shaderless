@@ -1,0 +1,20 @@
+<Project>
+
+  <!-- Product metadata on every assembly and exe (SignPath checks product name and version on each signed file). The version comes from the tag: build/publish.ps1 passes -p:Version=<tag
+       without v> and turns the +sha suffix off, so every file of a release reports the same version. A plain build is
+       0.0.0-internal.0+<commit sha> (SourceLink appends the sha). -->
+  <PropertyGroup>
+    <Product>SCSKiller</Product>
+    <Company>The SCSKiller authors</Company>
+    <Authors>The SCSKiller authors</Authors>
+    <Copyright>Copyright (C) 2026 The SCSKiller authors</Copyright>
+    <VersionPrefix>0.0.0</VersionPrefix>
+    <VersionSuffix>internal.0</VersionSuffix>
+  </PropertyGroup>
+
+  <!-- CET-compatible .NET exes fail-fast at start (0x80131506) on Windows 10 builds without CET special user-mode APCs -->
+  <PropertyGroup>
+    <CETCompat>false</CETCompat>
+  </PropertyGroup>
+
+</Project>

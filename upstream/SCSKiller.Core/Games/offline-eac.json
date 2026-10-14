@@ -1,0 +1,22 @@
+{
+  "about": "Steam games with EasyAntiCheat that run offline without it when their exe is started directly with steam_appid.txt (the Steam app id) beside it: the only games SCSKiller offers an offline recording session for. exe: the file the game's Steam id is discovered with. Elden Ring Nightreign has an offline mode but no source confirms this launch, so it isn't listed.",
+  "games": [
+    {
+      "id": "steam:1245620",
+      "name": "ELDEN RING",
+      "exe": "eldenring.exe",
+      "sources": [
+        "https://steamcommunity.com/app/1245620/discussions/0/3183488724679237406",
+        "https://droidwin.com/?p=19228"
+      ]
+    },
+    {
+      "id": "steam:1888160",
+      "name": "ARMORED CORE VI FIRES OF RUBICON",
+      "exe": "armoredcore6.exe",
+      "sources": [
+        "https://steamcommunity.com/app/1888160/discussions/0/3820795131605404845"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,217 @@
+diff -ruN a/src/SCSKiller.Core/App/Codecs.cs b/src/SCSKiller.Core/App/Codecs.cs
+--- a/src/SCSKiller.Core/App/Codecs.cs	2026-10-15 01:28:40.261408563 +0300
++++ b/src/SCSKiller.Core/App/Codecs.cs	2026-10-15 01:28:40.265506361 +0300
+@@ -23,7 +23,7 @@
+ 
+     /// <summary>The pinned Oodle build runs AVX2, BMI2 and MOVBE code with no CPU check, which kills the process on a CPU
+     /// without them. Without it CUE4Parse decodes Oodle data in managed code.</summary>
+-    public static bool NativeOodle => Avx2.IsSupported && Bmi2.X64.IsSupported;
++    public static bool NativeOodle => OperatingSystem.IsWindows() && Avx2.IsSupported && Bmi2.X64.IsSupported;
+ 
+     public const string NoNativeOodle = "this CPU lacks AVX2/BMI2, which the Oodle library needs";
+ 
+@@ -31,6 +31,7 @@
+     /// loaded. Two readers may start at once (the lock: they'd race on the same download).</summary>
+     public static void Load(bool zlib = true)
+     {
++        if (!OperatingSystem.IsWindows()) return;
+         lock (Gate)
+         {
+             if (NativeOodle && OodleHelper.Instance == null) OodleHelper.Initialize(Ensure(OodleHelper.OodleFileName, DownloadOodle));
+diff -ruN a/src/SCSKiller.Core/Games/GameFiles.cs b/src/SCSKiller.Core/Games/GameFiles.cs
+--- a/src/SCSKiller.Core/Games/GameFiles.cs	2026-10-15 01:28:40.262720457 +0300
++++ b/src/SCSKiller.Core/Games/GameFiles.cs	2026-10-15 01:28:40.266868500 +0300
+@@ -44,7 +44,7 @@
+             .Select(f => new FileInfo(f))
+             .ToList();
+         if (exes.FirstOrDefault(f => Directory.Exists(Path.ChangeExtension(f.FullName, null) + "_Data")) is { } unity) return unity.FullName;   // Unity: Game.exe + Game_Data
+-        var guess = exes.OrderBy(f => f.DirectoryName!.Length > installDir.TrimEnd('\\').Length ? 1 : 0)   // root folder first
++        var guess = exes.OrderBy(f => f.DirectoryName!.Length > installDir.TrimEnd('\\', '/').Length ? 1 : 0)   // root folder first
+             .ThenByDescending(f => f.Length).FirstOrDefault();
+         return guess == null ? null : NotPlus(LaunchedExe(installDir, guess, exes), exes);
+     }
+@@ -411,7 +411,7 @@
+         if (RiotGames(game.InstallDir) || RiotGames(game.ExePath)) return AntiCheat.Other;
+         var install = Path.TrimEndingDirectorySeparator(Path.GetFullPath(game.InstallDir));
+         var exeDir = Path.GetDirectoryName(Path.GetFullPath(game.ExePath))!;
+-        bool Inside(string d) => d.Equals(install, StringComparison.OrdinalIgnoreCase) || d.StartsWith(install + '\\', StringComparison.OrdinalIgnoreCase);
++        bool Inside(string d) => d.Equals(install, StringComparison.OrdinalIgnoreCase) || d.StartsWith(install + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+         var seen = 0;
+         var clock = Stopwatch.StartNew();
+diff -ruN a/src/SCSKiller.Core/Northlight/NorthlightReader.cs b/src/SCSKiller.Core/Northlight/NorthlightReader.cs
+--- a/src/SCSKiller.Core/Northlight/NorthlightReader.cs	2026-10-15 01:28:40.263417707 +0300
++++ b/src/SCSKiller.Core/Northlight/NorthlightReader.cs	2026-10-15 01:28:40.267438860 +0300
+@@ -20,7 +20,7 @@
+     public const string Family = "Northlight", Version = "DX12";
+     public const string Libraries = "libraries";
+     public const string Platform11 = "D3D11";
+-    const string Dir = @"data\shaders\build\pc_dxil", Dir11 = @"data\shaders\build\pc_dx11";
++    static readonly string Dir = Path.Combine("data", "shaders", "build", "pc_dxil"), Dir11 = Path.Combine("data", "shaders", "build", "pc_dx11");
+ 
+     /// <summary>Effect files Detect reads, smallest first, to find one VS+PS record.</summary>
+     const int DetectFiles = 8;
+diff -ruN a/src/SCSKiller.Core/Planning/RootSig.cs b/src/SCSKiller.Core/Planning/RootSig.cs
+--- a/src/SCSKiller.Core/Planning/RootSig.cs	2026-10-15 01:28:40.263467712 +0300
++++ b/src/SCSKiller.Core/Planning/RootSig.cs	2026-10-15 01:28:40.267487542 +0300
+@@ -1,3 +1,4 @@
++using System.Buffers.Binary;
+ using System.Runtime.InteropServices;
+ using SCSKiller.Core.Carved;
+ using static SCSKiller.Core.Unreal.ShaderContainer;
+@@ -362,14 +363,92 @@
+         return Dxbc.Part(blob, "RTS0"u8) is { IsEmpty: false } rts ? rts.ToArray() : throw new InvalidDataException("no RTS0 part");
+     }
+ 
+-    static readonly delegate* unmanaged<void*, nint*, nint*, int> SerializeFn = (delegate* unmanaged<void*, nint*, nint*, int>)NativeLibrary.GetExport(
+-        NativeLibrary.Load(Path.Combine(Environment.SystemDirectory, "d3d12.dll")), "D3D12SerializeVersionedRootSignature"); // System32: never a proxy d3d12.dll next to the app
++    static readonly delegate* unmanaged<void*, nint*, nint*, int> SerializeFn =
++        OperatingSystem.IsWindows()
++            ? (delegate* unmanaged<void*, nint*, nint*, int>)NativeLibrary.GetExport(
++                NativeLibrary.Load(Path.Combine(Environment.SystemDirectory, "d3d12.dll")), "D3D12SerializeVersionedRootSignature")
++            : null;
+ 
+     /// <summary>The runtime refused the description (E_INVALIDARG: overlapping registers, a bad sampler, ...).</summary>
+     public sealed class SerializeException(string message) : InvalidOperationException(message);
+ 
++    public static byte[] WrapDxbc(byte[] rts0)
++    {
++        uint totalSize = (uint)(32 + 4 + 8 + rts0.Length);
++        var b = new byte[totalSize];
++        "DXBC"u8.CopyTo(b);
++        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(20), 1);
++        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(24), totalSize);
++        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(28), 1);
++        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(32), 36);
++        "RTS0"u8.CopyTo(b.AsSpan(36));
++        BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(40), (uint)rts0.Length);
++        rts0.CopyTo(b, 44);
++        return b;
++    }
++
++    public static byte[] EncodeRts0(Desc d, byte[] samplers)
++    {
++        var rows = d.Rows;
++        var payload = new List<uint>();
++        var at = 24 + 12 * rows.Count;
++        var parms = new List<uint>();
++        uint ver = d.Version10 ? 1u : 2u;
++
++        foreach (var r in rows)
++        {
++            parms.AddRange([r[0], r[1], (uint)(at + 4 * payload.Count)]);
++            if (r[0] == 0)
++            {
++                var count = (r.Length - 2) / 5;
++                payload.AddRange([(uint)count, (uint)(at + 4 * payload.Count + 8)]);
++                for (var j = 0; j < count; j++)
++                {
++                    uint type = r[2 + 5 * j];
++                    uint num = r[2 + 5 * j + 1];
++                    uint baseReg = r[2 + 5 * j + 2];
++                    uint space = r[2 + 5 * j + 3];
++                    uint flags = r[2 + 5 * j + 4];
++                    uint offset = d.RangeOffsets ? flags : count == 1 ? r.Length == 8 ? r[7] : Append : d.AppendRanges ? Append : 0;
++
++                    if (d.Version10)
++                        payload.AddRange([type, num, baseReg, space, offset]);
++                    else
++                        payload.AddRange([type, num, baseReg, space, flags, offset]);
++                }
++            }
++            else if (r[0] == 1)
++            {
++                payload.AddRange([r[2], r[3], r[4]]);
++            }
++            else
++            {
++                if (d.Version10)
++                    payload.AddRange([r[2], r[3]]);
++                else
++                    payload.AddRange([r[2], r[3], r[4]]);
++            }
++        }
++
++        var b = new byte[at + 4 * payload.Count + samplers.Length];
++        uint[] head = [ver, (uint)rows.Count, 24, (uint)(samplers.Length / 52), (uint)(at + 4 * payload.Count), d.Flags];
++        for (var i = 0; i < head.Length; i++) BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(4 * i), head[i]);
++        for (var i = 0; i < parms.Count; i++) BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(24 + 4 * i), parms[i]);
++        for (var i = 0; i < payload.Count; i++) BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at + 4 * i), payload[i]);
++        samplers.CopyTo(b, at + 4 * payload.Count);
++
++        var wrapped = WrapDxbc(b);
++        if (!Dxbc.RootSignatureValid(wrapped))
++            throw new SerializeException("Root signature validation failed");
++
++        return wrapped;
++    }
++
+     public static byte[] Serialize(Desc d, byte[] samplers)
+     {
++        if (SerializeFn == null)
++            return EncodeRts0(d, samplers);
++
+         // x64 layouts: D3D12_ROOT_PARAMETER(1) = 32 bytes (type @0, union @8, visibility @24), D3D12_DESCRIPTOR_RANGE1 = 6 x u32
+         // (1.0: 5, no flags), D3D12_VERSIONED_ROOT_SIGNATURE_DESC = version @0, NumParameters @8, pParameters @16,
+         // NumStaticSamplers @24, pStaticSamplers @32, Flags @40 (the same for 1.0 and 1.1).
+@@ -446,6 +525,36 @@
+             if (ver == 3 && BitConverter.ToUInt32(b, q + 52) != 0) throw new SerializeException("a 1.2 static sampler with flags has no 1.0 form");
+             b.AsSpan(q, 52).CopyTo(samplers.AsSpan(52 * (int)s));
+         }
++
++        if (SerializeFn == null)
++        {
++            var atOffset = 24 + 12 * (int)n;
++            var parmsList = new List<uint>();
++            var payloadList = new List<uint>();
++            for (var i = 0u; i < n; i++)
++            {
++                var (type, payload) = (U(at + 12 * i), U(at + 12 * i + 8));
++                parmsList.AddRange([type, U(at + 12 * i + 4), (uint)(atOffset + 4 * payloadList.Count)]);
++                if (type == 0)
++                {
++                    var rangeCount = U(payload);
++                    payloadList.AddRange([rangeCount, (uint)(atOffset + 4 * payloadList.Count + 8)]);
++                    for (var r = 0; r < (int)rangeCount * 5; r++)
++                        payloadList.Add(ranges[first[i] + r]);
++                }
++                else for (var k = 0u; k < (type == 1 ? 3u : 2u); k++) payloadList.Add(U(payload + 4 * k));
++            }
++            var b10 = new byte[atOffset + 4 * payloadList.Count + samplers.Length];
++            uint[] head10 = [1, n, 24, ns, (uint)(atOffset + 4 * payloadList.Count), U(20)];
++            for (var i = 0; i < head10.Length; i++) BinaryPrimitives.WriteUInt32LittleEndian(b10.AsSpan(4 * i), head10[i]);
++            for (var i = 0; i < parmsList.Count; i++) BinaryPrimitives.WriteUInt32LittleEndian(b10.AsSpan(24 + 4 * i), parmsList[i]);
++            for (var i = 0; i < payloadList.Count; i++) BinaryPrimitives.WriteUInt32LittleEndian(b10.AsSpan(atOffset + 4 * i), payloadList[i]);
++            samplers.CopyTo(b10, atOffset + 4 * payloadList.Count);
++            var wrapped10 = WrapDxbc(b10);
++            if (!Dxbc.RootSignatureValid(wrapped10))
++                throw new SerializeException("Root signature 1.0 validation failed");
++            return wrapped10;
++        }
+         var rangeArray = ranges.Count > 0 ? ranges.ToArray() : new uint[1];
+         var parms = new byte[Math.Max(1, n) * 32];
+         var desc = new byte[48];
+diff -ruN a/src/SCSKiller.Core/RedEngine/RedEngineReader.cs b/src/SCSKiller.Core/RedEngine/RedEngineReader.cs
+--- a/src/SCSKiller.Core/RedEngine/RedEngineReader.cs	2026-10-15 01:28:40.263978348 +0300
++++ b/src/SCSKiller.Core/RedEngine/RedEngineReader.cs	2026-10-15 01:28:40.267927615 +0300
+@@ -22,7 +22,7 @@
+     /// <summary>The library name of a technique's ray tracing hit group map: its closest hit library, then its any hit library
+     /// when it has one (<see cref="RedRayTracing"/>).</summary>
+     public const string HitGroups = "hitgroups";
+-    const string Materials = @"content\content0\shaderdx12_0.cache", Static = @"content\content0\staticshaderDx12_0.cache";
++    static readonly string Materials = Path.Combine("content", "content0", "shaderdx12_0.cache"), Static = Path.Combine("content", "content0", "staticshaderDx12_0.cache");
+ 
+     /// <summary>Techniques whose shaders Detect inflates, at most, to find one usable pipeline.</summary>
+     const int DetectTechniques = 64;
+diff -ruN a/src/SCSKiller.Core/SCSKiller.Core.csproj b/src/SCSKiller.Core/SCSKiller.Core.csproj
+--- a/src/SCSKiller.Core/SCSKiller.Core.csproj	2026-10-15 01:28:40.263978348 +0300
++++ b/src/SCSKiller.Core/SCSKiller.Core.csproj	2026-10-15 01:28:40.269355488 +0300
+@@ -1,7 +1,7 @@
+ ﻿<Project Sdk="Microsoft.NET.Sdk">
+ 
+   <PropertyGroup>
+-    <TargetFramework>net10.0-windows</TargetFramework>
++    <TargetFramework>net10.0</TargetFramework>
+     <ImplicitUsings>enable</ImplicitUsings>
+     <Nullable>enable</Nullable>
+     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

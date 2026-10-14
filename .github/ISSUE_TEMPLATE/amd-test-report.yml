@@ -1,0 +1,63 @@
+name: AMD test report
+description: You tried Shaderless on an AMD GPU. Thank you! Tell us what happened.
+labels: ["amd", "test report"]
+body:
+  - type: markdown
+    attributes:
+      value: "Shaderless has only been tested on NVIDIA. Your report is how AMD support gets confirmed or fixed."
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      placeholder: "e.g. RX 7800 XT"
+    validations:
+      required: true
+  - type: input
+    id: mesa
+    attributes:
+      label: Mesa version and distro
+      description: "`glxinfo | grep 'OpenGL version'` or `vulkaninfo | grep driverInfo`"
+      placeholder: "e.g. Mesa 26.1.2, Arch Linux"
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game and Proton version
+      placeholder: "e.g. Valor Mortis, Proton 10.0-3"
+    validations:
+      required: true
+  - type: dropdown
+    id: log
+    attributes:
+      label: Did scskiller.log appear next to the game's exe after launching with Record on?
+      options: ["Yes", "No", "Didn't check"]
+    validations:
+      required: true
+  - type: input
+    id: recorded
+    attributes:
+      label: "\"Recorded Pipelines\" count after playing (click Rescan)"
+  - type: textarea
+    id: cache
+    attributes:
+      label: Where was the shader cache written, and how big is it?
+      description: |
+        After a Re-Compile, check these and paste sizes (`du -sh <path>`):
+        - `~/.cache/mesa_shader_cache*` (or `$MESA_SHADER_CACHE_DIR`)
+        - `~/.local/share/Steam/steamapps/shadercache/<appid>/`
+        - `~/.local/share/Steam/steamapps/compatdata/<appid>/` (search for `vkd3d-proton.cache*`)
+        Also: the "On-Disk Shader Cache" size the app shows for the game.
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Stutter after Record + Re-Compile
+      options: ["Much better", "A bit better", "No change", "Worse"]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else (errors, screenshots, the game folder's scskiller.log)
