@@ -860,7 +860,7 @@ public class ProtonRunner
 
     static void InstallCachesWhereGameReads(GameInfo game, string vkd3dCache, string glCache)
     {
-        if (game.Source != GameSource.Lutris || string.IsNullOrEmpty(game.PrefixPath)) return;
+        if (game.Source == GameSource.Steam || string.IsNullOrEmpty(game.PrefixPath)) return;
         string prefix = game.PrefixPath;
         var installed = new List<string>();
         try
@@ -880,7 +880,11 @@ public class ProtonRunner
             // NVIDIA: <the game's __GL_SHADER_DISK_CACHE_PATH>/GLCache; the folders under it are named by the driver
             // (the same ones the game itself uses). Lutris sets that path to the prefix for a launcher-installed game and to
             // the exe's folder for a game added by its exe.
-            string gameGl = Path.Combine(string.IsNullOrEmpty(game.GlCachePath) ? prefix : game.GlCachePath, "GLCache");
+            // Heroic sets no NVIDIA path of its own, so the game gets the one in Shaderless's Proton settings file:
+            // <prefix>/shadercache/nvidiav1 (measured: STEAM_COMPAT_SHADER_PATH is <prefix>/shadercache).
+            string nvidiaBase = !string.IsNullOrEmpty(game.GlCachePath) ? game.GlCachePath
+                : game.Source == GameSource.Heroic ? Path.Combine(prefix, "shadercache", "nvidiav1") : prefix;
+            string gameGl = Path.Combine(nvidiaBase, "GLCache");
             if (Directory.Exists(glCache))
             {
                 foreach (var file in Directory.GetFiles(glCache, "*", SearchOption.AllDirectories)

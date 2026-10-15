@@ -48,14 +48,7 @@ public class HeroicLinuxSource : IGameSource
                         string gameConfig = Path.Combine(heroicConfig, "GamesConfig", $"{prop.Name}.json");
                         if (File.Exists(gameConfig))
                         {
-                            try
-                            {
-                                using var cfgDoc = JsonDocument.Parse(File.ReadAllText(gameConfig));
-                                if (cfgDoc.RootElement.TryGetProperty("winePrefix", out var wp))
-                                {
-                                    prefix = wp.GetString();
-                                }
-                            }
+                            try { prefix = ReadWinePrefix(File.ReadAllText(gameConfig), prop.Name); }
                             catch { }
                         }
 
@@ -85,5 +78,15 @@ public class HeroicLinuxSource : IGameSource
 
             return results;
         }, cancellationToken);
+    }
+
+    /// <summary>The game's Wine prefix from its Heroic config file. Heroic keeps the game's settings under a key named
+    /// after the game's id (next to "version" and "explicit"); a plain top-level "winePrefix" is accepted too.</summary>
+    internal static string? ReadWinePrefix(string json, string gameId)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var settings = root.TryGetProperty(gameId, out var inner) && inner.ValueKind == JsonValueKind.Object ? inner : root;
+        return settings.TryGetProperty("winePrefix", out var wp) && wp.ValueKind == JsonValueKind.String ? wp.GetString() : null;
     }
 }

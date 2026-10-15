@@ -196,7 +196,7 @@ public class NvidiaBackend : IDriverBackend
             }
             else if (source != GameSource.Steam && !string.IsNullOrEmpty(prefixPath))
             {
-                if (source == GameSource.Lutris) ProtonRunner.RemoveInstalledCaches(prefixPath, gameId);
+                ProtonRunner.RemoveInstalledCaches(prefixPath, gameId);
                 string targetPath = Path.Combine(prefixPath, "shadercache", gameId);   // the per-game folder: prefixes can be shared between games
                 if (Directory.Exists(targetPath))
                 {

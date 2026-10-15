@@ -141,4 +141,21 @@ public class LutrisEpicTests
         try { Assert.AreEqual(dir, LutrisLinuxSource.InferInstallRoot(Path.Combine(dir, "x.exe"))); }
         finally { Directory.Delete(dir, true); }
     }
+
+    [TestMethod]
+    public void Heroic_Prefix_Is_Read_From_Under_The_Game_Id()
+    {
+        const string json = """
+            { "abc": { "winePrefix": "/home/u/Games/Heroic/Prefixes/A Game", "wineVersion": { "name": "proton" } },
+              "version": "v0", "explicit": true }
+            """;
+        Assert.AreEqual("/home/u/Games/Heroic/Prefixes/A Game", HeroicLinuxSource.ReadWinePrefix(json, "abc"));
+    }
+
+    [TestMethod]
+    public void Heroic_Prefix_Falls_Back_To_Top_Level_And_To_Null()
+    {
+        Assert.AreEqual("/p", HeroicLinuxSource.ReadWinePrefix("{ \"winePrefix\": \"/p\" }", "abc"));
+        Assert.IsNull(HeroicLinuxSource.ReadWinePrefix("{ \"abc\": { \"enableEsync\": true } }", "abc"));
+    }
 }
