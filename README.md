@@ -34,6 +34,8 @@ uses**, so the game finds them already compiled.
 | **Heroic** | **Epic games:** found (checked with one game); compiling a Heroic game hasn't been tested much. **GOG / Amazon:** not supported yet. |
 | **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% (one game, see [test results](#test-results-our-own-2-games)). **Games added by their exe** (for example a DRM-free copy): found, compiled, and the cache installed where the game reads it, checked with the game's real settings (one game, Proton-CachyOS; no stutter measurements). **Games from a Lutris installer script:** implemented, not tested. **GOG / other launchers in a Wine prefix:** not found yet. |
 
+**AMD (Mesa) and Lutris:** the step that installs the compiled cache where a Lutris game reads it is only done for the NVIDIA cache and the vkd3d-proton cache. Mesa's cache isn't handled yet, so AMD users on Lutris may not see the full effect. We have no AMD machine to test on.
+
 If your games don't show up, please [open an issue](../../issues) with the launcher and where the game lives.
 
 ## Install
