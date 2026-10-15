@@ -36,22 +36,6 @@ uses**, so the game finds them already compiled.
 
 If your games don't show up, please [open an issue](../../issues) with the launcher and where the game lives.
 
-### End of Abyss (Epic Games Store, run through Lutris)
-
-*End of Abyss (Unreal Engine 5, UMU-Proton 10.0-4 through Lutris) · RTX 3070 · NVIDIA 615.78.08 · CachyOS.
-Same machine as above. Timings measured by the recorder itself. A pipeline create over 3 ms counts as "had to compile", the rule SCSKiller uses.*
-
-| | Session 1: no cache | Session 2: after Record + Re-Compile | Session 3: after 2nd Re-Compile, plus a new area |
-|---|---|---|---|
-| Pipelines the game had to compile | 94.4% | **6.7%** | **2.1%** |
-| Typical pipeline create time | 44 ms | **0.28 ms** | **0.25 ms** |
-| Slowest single create | 5.9 s | **30 ms** | 289 ms (entering the new area) |
-| Compiles after the first minute of play | 213 | **0** | 60 (58 of them in one 30-second burst on entering the new area) |
-
-Sessions 2 and 3 repeat the route of session 1 (about 7,250 pipeline creates each, so the comparison is like for like). Session 3 then goes into an area that session 1 and 2 never visited, and that is where the remaining hitch is. One game, one route, no frame-time measurements.
-
-> **Caveat:** the game also writes its own shader cache while you play, and that cache was still in place for sessions 2 and 3. So part of the improvement may come from the game's own cache from the previous session, not only from Shaderless. We have not yet run a test that separates the two, and the Valor Mortis table above has the same limit.
-
 ## Install
 
 ### Option 1: Pre-built Release (No .NET SDK needed)
@@ -103,17 +87,23 @@ teaches it the real state, and Shaderless also applies what it learns to shaders
 
 ## Test results (our own, 2 games)
 
-### Valor Mortis (Steam)
+*Both games on the same machine: RTX 3070 · NVIDIA 615.78.08 · CachyOS. Timings measured by the recorder itself.
+"Had to compile" means a pipeline create over 3 ms, the rule SCSKiller uses.*
 
-*Valor Mortis (Unreal Engine 5, Proton) · RTX 3070 · NVIDIA 615.78.08 · CachyOS · ~10 min per session.
-Timings measured by the recorder itself.*
+| Game | Session | Had to compile | Typical create time | Slowest create | Compile time during loading screens |
+|---|---|---|---|---|---|
+| **Valor Mortis** (Steam, Proton) | 1: no matching cache | 48.9% | 2.83 ms | — | 170 s |
+| | 2: after Record + Re-Compile | **6.0%** | **0.29 ms** | — | 112 s |
+| | 3: after 2nd round (new areas visited) | 8.7% | 0.35 ms | — | **56 s** |
+| **End of Abyss** (Epic Games Store, through Lutris) | 1: no cache | 94.4% | 44 ms | 5.9 s | — |
+| | 2: after Record + Re-Compile | **6.7%** | **0.28 ms** | **30 ms** | — |
+| | 3: after 2nd Re-Compile, plus a new area | **2.1%** | **0.25 ms** | 289 ms | — |
 
-| | No matching cache | After Record + Re-Compile | After 2nd round |
-|---|---|---|---|
-| Pipelines the game had to compile | 48.9% | **6.0%** | 8.7% (new areas visited) |
-| Typical pipeline create time | 2.83 ms | **0.29 ms** | 0.35 ms |
-| Compile time spent during loading screens | 170 s | 112 s | **56 s** |
-| New ray tracing pipelines at load | — | 315 | **11** |
+- **Valor Mortis** (Unreal Engine 5): about 10 minutes per session. New ray tracing pipelines at load: — / 315 / **11**.
+- **End of Abyss** (Unreal Engine 5, UMU-Proton 10.0-4): sessions 2 and 3 repeat the route of session 1 (about 7,250 pipeline creates each, so the comparison is like for like). Compiles after the first minute of play: 213 / **0** / 60. Session 3 then enters an area the first two never visited, and that is where the remaining hitch is: 58 compiles in one 30-second burst.
+- One route per game, no frame-time measurements.
+
+> **Caveat:** the game also writes its own shader cache while you play, and that cache was still in place for sessions 2 and 3. So part of the improvement may come from the game's own cache from the previous session, not only from Shaderless. We have not yet run a test that separates the two.
 
 ## If recording doesn't start
 
