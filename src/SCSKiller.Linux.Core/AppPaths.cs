@@ -5,6 +5,12 @@ namespace SCSKiller.Linux.Core;
 public static class AppPaths
 {
     public const string AppName = "Shaderless";
+
+    /// <summary>The app's version (set once, in SCSKiller.Linux.Core.csproj), e.g. "0.1.1-beta".</summary>
+    public static string Version { get; } =
+        (typeof(AppPaths).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "dev")
+        .Split('+')[0];
     static readonly Lazy<string> _dataDir = new(Resolve);
     public static string DataDir => _dataDir.Value;
 

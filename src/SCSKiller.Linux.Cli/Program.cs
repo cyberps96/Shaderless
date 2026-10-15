@@ -10,6 +10,11 @@ class Program
     static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        if (args.Length > 0 && (args[0] is "--version" or "-v" or "version"))
+        {
+            Console.WriteLine($"Shaderless {SCSKiller.Linux.Core.AppPaths.Version}");
+            return 0;
+        }
         PrintHeader();
 
         var driverBackend = await DriverDetector.DetectActiveBackendAsync();
@@ -81,6 +86,7 @@ class Program
 ║      Shaderless — Shader Compilation Stutter Killer           ║
 ║        Kills shader stutter before you play (AMD/NVIDIA)      ║
 ╚═══════════════════════════════════════════════════════════════╝");
+        Console.WriteLine($"  v{SCSKiller.Linux.Core.AppPaths.Version} (unofficial Linux port of SCSKiller)");
         Console.ResetColor();
     }
 

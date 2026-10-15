@@ -2,7 +2,9 @@ namespace SCSKiller.Linux.App;
 
 public static class UiAssets
 {
-    public static string GetHtml() => """
+    public static string GetHtml() => Html.Replace("{{VERSION}}", SCSKiller.Linux.Core.AppPaths.Version);
+
+    const string Html = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -241,7 +243,7 @@ public static class UiAssets
       <div class="brand-icon"><svg viewBox="130 58 252 396" width="14" height="22"><path fill="#fff" stroke="#fff" stroke-width="10" stroke-linejoin="round" d="M296 64 L136 288 H240 L208 448 L376 208 H272 Z"/></svg></div>
       <div>
         <h1>Shaderless</h1>
-        <div class="brand-subtitle">Unofficial Linux port of SCSKiller · Beta</div>
+        <div class="brand-subtitle">Unofficial Linux port of SCSKiller · v{{VERSION}}</div>
       </div>
     </div>
 

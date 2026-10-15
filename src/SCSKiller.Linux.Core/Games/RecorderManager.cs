@@ -72,6 +72,13 @@ public static class RecorderManager
 
     public const string IniText = "[scskiller]\r\n; written by Shaderless (unofficial Linux port of SCSKiller): the recorder records every pipeline the game creates into scskiller.db\r\nmode=record\r\n";
 
+    /// <summary>The anti-cheat found in the game's folder (None if there is none, or the game's exe wasn't found).</summary>
+    public static SCSKiller.Core.AntiCheat DetectAntiCheat(GameInfo game)
+    {
+        try { return ExeDir(game) is { } dir ? SCSKiller.Core.Games.GameFiles.DetectAntiCheat(ToCore(game, dir)) : SCSKiller.Core.AntiCheat.None; }
+        catch { return SCSKiller.Core.AntiCheat.None; }
+    }
+
     /// <summary>Installs and arms the recorder. Refuses next to anti-cheat (a d3d12.dll there could get the account banned)
     /// and over another mod's d3d12.dll.</summary>
     public static void Install(GameInfo game)

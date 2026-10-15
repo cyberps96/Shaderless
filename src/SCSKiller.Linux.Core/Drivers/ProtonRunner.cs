@@ -405,7 +405,9 @@ public class ProtonRunner
 
             await process.WaitForExitAsync(cancellationToken);
 
-            FinalizeDriverCaches(targetCachePath, vkd3dCache, glCache, gameExeDir);
+            // Games with anti-cheat: leave the game's folder untouched (no vkd3d-proton.cache copied next to the exe)
+            bool hasAntiCheat = SCSKiller.Linux.Core.Games.RecorderManager.DetectAntiCheat(game) != SCSKiller.Core.AntiCheat.None;
+            FinalizeDriverCaches(targetCachePath, vkd3dCache, glCache, hasAntiCheat ? null : gameExeDir);
 
             try
             {

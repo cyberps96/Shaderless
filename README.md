@@ -61,11 +61,11 @@ Timings measured by the recorder itself.*
 
 ### Option 1: Pre-built Release (No .NET SDK needed)
 
-Download **`Shaderless-v0.1.0-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
+Download **`Shaderless-v0.1.1-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
 
 ```bash
-tar -xzf Shaderless-v0.1.0-beta-linux-x64.tar.gz
-cd Shaderless-v0.1.0-beta-linux-x64
+tar -xzf Shaderless-v0.1.1-beta-linux-x64.tar.gz
+cd Shaderless-v0.1.1-beta-linux-x64
 ./run-gui.sh          # launch the app
 ./install-desktop.sh  # optional: adds Shaderless (with its icon) to your app menu and desktop
 ```
@@ -93,6 +93,14 @@ that's `<Game>/Binaries/Win64/`, not the top folder. If it doesn't appear, add t
 ```
 WINEDLLOVERRIDES="d3d12=n,b" %command%
 ```
+
+### Troubleshooting
+
+- **The window doesn't open / is blank (Wayland, AMD or NVIDIA):** start it with `./run-gui.sh` (it sets `GDK_BACKEND=x11` and turns off WebKit's DMA-BUF renderer). Don't launch the binary directly.
+- **`webkit2gtk` / `libwebkit2gtk-4.1` not found:** install it (Arch/CachyOS: `webkit2gtk-4.1`, Debian/Ubuntu: `libwebkit2gtk-4.1-0`, Fedora: `webkit2gtk4.1`).
+- **No games listed:** Shaderless reads Steam, Heroic and Lutris libraries from their default folders. Run `./run-cli.sh list` to see what it finds.
+- **Which version am I on?** It's shown in the app header, or run `./run-cli.sh --version`. Please include it in bug reports.
+- **Games with anti-cheat:** Record mode refuses to install there. Compiling still works, and nothing is added to the game's folder.
 
 ### Safety
 

@@ -49,6 +49,22 @@ public class ShaderCompilerCoordinator
 
         await Task.Delay(50, cancellationToken);
 
+        var antiCheat = RecorderManager.DetectAntiCheat(game);
+        if (antiCheat != SCSKiller.Core.AntiCheat.None)
+        {
+            yield return new CompilationProgress(
+                GameId: game.Id,
+                GameName: game.Name,
+                ProcessedShaders: 0,
+                TotalShaders: estimatedTotal,
+                Percentage: 1.0,
+                CurrentAction: $"{antiCheat} detected: compiling outside the game, nothing is added to the game's folder",
+                IsComplete: false,
+                Failed: false,
+                ErrorMessage: null
+            );
+        }
+
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string appDataDir = SCSKiller.Linux.Core.AppPaths.DataDir;
         string workingDir = Path.Combine(appDataDir, "work", game.Id);

@@ -27,7 +27,7 @@ class Program
         SetNativeEnv("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
 
         var window = new PhotinoWindow()
-            .SetTitle("Shaderless — shader stutter killer for Linux (unofficial SCSKiller port)")
+            .SetTitle($"Shaderless v{SCSKiller.Linux.Core.AppPaths.Version} — shader stutter killer for Linux (unofficial SCSKiller port)")
             .SetSize(1150, 750)
             .Center()
             .SetResizable(true);
