@@ -32,7 +32,7 @@ uses**, so the game finds them already compiled.
 |---|---|
 | **Steam** | Works. Tested on this port's main test machine. |
 | **Heroic** | **Epic games:** found (checked with one game); compiling a Heroic game hasn't been tested much. **GOG / Amazon:** not supported yet. |
-| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). **Whether the game then uses the compiled cache is still being tested.** **Games in their own folder:** implemented, but not tested on a real library. **GOG / other launchers in a Wine prefix:** not found yet. |
+| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). In one 10-minute test the game wrote almost nothing to its own shader cache after a compile, so it used ours (one game, no stutter measurements yet). **Games in their own folder:** implemented, but not tested on a real library. **GOG / other launchers in a Wine prefix:** not found yet. |
 
 If your games don't show up, please [open an issue](../../issues) with the launcher and where the game lives.
 

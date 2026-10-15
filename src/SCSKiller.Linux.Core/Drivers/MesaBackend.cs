@@ -244,6 +244,7 @@ public class MesaBackend : IDriverBackend
             else if (!string.IsNullOrEmpty(prefixPath))
             {
                 // the per-game folder only: a prefix can be shared between games
+                if (source == GameSource.Lutris) ProtonRunner.RemoveInstalledCaches(prefixPath, gameId);
                 string targetPath = Path.Combine(prefixPath, "shadercache", gameId);
                 if (Directory.Exists(targetPath))
                 {

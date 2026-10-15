@@ -408,6 +408,7 @@ public class ProtonRunner
             // Games with anti-cheat: leave the game's folder untouched (no vkd3d-proton.cache copied next to the exe)
             bool hasAntiCheat = SCSKiller.Linux.Core.Games.RecorderManager.DetectAntiCheat(game) != SCSKiller.Core.AntiCheat.None;
             FinalizeDriverCaches(targetCachePath, vkd3dCache, glCache, hasAntiCheat ? null : gameExeDir);
+            InstallCachesWhereGameReads(game, vkd3dCache, glCache);
 
             try
             {
@@ -828,6 +829,86 @@ public class ProtonRunner
                         }
                         catch { }
                     }
+                }
+            }
+        }
+        catch { }
+    }
+
+    // NVIDIA's shader cache files that a game started through Proton reads without writing (see EnsureProtonLocalShaderCacheSetting)
+    static readonly string[] NvidiaReadOnlyCacheNames =
+        { "steam_shader_cache.bin", "steam_shader_cache.toc", "steamapp_merged_shader_cache.bin", "steamapp_merged_shader_cache.toc" };
+
+    [System.Runtime.InteropServices.DllImport("libc.so.6", EntryPoint = "link", SetLastError = true)]
+    private static extern int HardLink(string existing, string newLink);
+
+    /// <summary>Hard link (no extra disk space), else a copy.</summary>
+    static void LinkOrCopy(string source, string destination)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        if (File.Exists(destination)) File.Delete(destination);
+        bool linked = false;
+        try { linked = HardLink(source, destination) == 0; } catch { }
+        if (!linked) File.Copy(source, destination, overwrite: true);
+    }
+
+    /// <summary>Where a game Lutris starts reads its caches. Measured on a running Lutris game (Epic Games Store, UMU-Proton):
+    /// vkd3d-proton: &lt;prefix&gt;/shadercache/VKD3D_shader_cache; NVIDIA: &lt;__GL_SHADER_DISK_CACHE_PATH&gt;/GLCache, which Lutris
+    /// sets to the game's folder (the prefix for a launcher-installed game). The compile writes into a folder of its own
+    /// (&lt;prefix&gt;/shadercache/&lt;id&gt;), so what it built is installed there. Other launchers are left as they are.</summary>
+    static void InstallCachesWhereGameReads(GameInfo game, string vkd3dCache, string glCache)
+    {
+        if (game.Source != GameSource.Lutris || string.IsNullOrEmpty(game.PrefixPath)) return;
+        string prefix = game.PrefixPath;
+        try
+        {
+            // vkd3d-proton
+            string gameVkd3d = Path.Combine(prefix, "shadercache", "VKD3D_shader_cache");
+            if (Directory.Exists(vkd3dCache))
+            {
+                Directory.CreateDirectory(gameVkd3d);
+                foreach (var cache in Directory.GetFiles(vkd3dCache, "*.cache"))
+                {
+                    try { MergeOrReplaceVkd3dCache(cache, Path.Combine(gameVkd3d, Path.GetFileName(cache))); } catch { }
+                }
+            }
+
+            // NVIDIA: the folders under GLCache are named by the driver (the same ones the game itself uses)
+            string gameGl = Path.Combine(prefix, "GLCache");
+            if (Directory.Exists(glCache))
+            {
+                foreach (var file in Directory.GetFiles(glCache, "*", SearchOption.AllDirectories)
+                             .Where(f => NvidiaReadOnlyCacheNames.Contains(Path.GetFileName(f))))
+                {
+                    try { LinkOrCopy(file, Path.Combine(gameGl, Path.GetRelativePath(glCache, file))); } catch { }
+                }
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>Removes what <see cref="InstallCachesWhereGameReads"/> put in the game's cache folders (called before the
+    /// compile's own folder &lt;prefix&gt;/shadercache/&lt;id&gt; is deleted, which says what was installed).</summary>
+    public static void RemoveInstalledCaches(string prefix, string gameId)
+    {
+        try
+        {
+            string own = Path.Combine(prefix, "shadercache", gameId);
+            string ownGl = Path.Combine(own, "nvidiav1", "GLCache");
+            if (Directory.Exists(ownGl))
+            {
+                foreach (var file in Directory.GetFiles(ownGl, "*", SearchOption.AllDirectories)
+                             .Where(f => NvidiaReadOnlyCacheNames.Contains(Path.GetFileName(f))))
+                {
+                    try { File.Delete(Path.Combine(prefix, "GLCache", Path.GetRelativePath(ownGl, file))); } catch { }
+                }
+            }
+            string ownVkd3d = Path.Combine(own, "VKD3D_shader_cache");
+            if (Directory.Exists(ownVkd3d))
+            {
+                foreach (var cache in Directory.GetFiles(ownVkd3d, "*.cache"))
+                {
+                    try { File.Delete(Path.Combine(prefix, "shadercache", "VKD3D_shader_cache", Path.GetFileName(cache))); } catch { }
                 }
             }
         }
