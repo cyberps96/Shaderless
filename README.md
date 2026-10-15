@@ -32,9 +32,23 @@ uses**, so the game finds them already compiled.
 |---|---|
 | **Steam** | Works. Tested on this port's main test machine. |
 | **Heroic** | **Epic games:** found (checked with one game); compiling a Heroic game hasn't been tested much. **GOG / Amazon:** not supported yet. |
-| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). In one 10-minute test the game wrote almost nothing to its own shader cache after a compile, so it used ours (one game, no stutter measurements yet). **Games in their own folder:** implemented, but not tested on a real library. **GOG / other launchers in a Wine prefix:** not found yet. |
+| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% (one game, see [test results](#test-results-our-own-2-games)). **Games in their own folder:** implemented, but not tested on a real library. **GOG / other launchers in a Wine prefix:** not found yet. |
 
 If your games don't show up, please [open an issue](../../issues) with the launcher and where the game lives.
+
+### End of Abyss (Epic Games Store, run through Lutris)
+
+*End of Abyss (Unreal Engine 5, UMU-Proton 10.0-4 through Lutris) · RTX 3070 · NVIDIA 615.78.08 · CachyOS.
+Same machine as above. Timings measured by the recorder itself. A pipeline create over 3 ms counts as "had to compile", the rule SCSKiller uses.*
+
+| | Session 1: no cache | Session 2: after Record + Re-Compile | Session 3: after 2nd Re-Compile, plus a new area |
+|---|---|---|---|
+| Pipelines the game had to compile | 94.4% | **6.7%** | **2.1%** |
+| Typical pipeline create time | 44 ms | **0.28 ms** | **0.25 ms** |
+| Slowest single create | 5.9 s | **30 ms** | 289 ms (entering the new area) |
+| Compiles after the first minute of play | 213 | **0** | 60 (58 of them in one 30-second burst on entering the new area) |
+
+Sessions 2 and 3 repeat the route of session 1 (about 7,250 pipeline creates each, so the comparison is like for like). Session 3 then goes into an area that session 1 and 2 never visited, and that is where the remaining hitch is. One game, one route, no frame-time measurements.
 
 ## Install
 
@@ -85,7 +99,9 @@ teaches it the real state, and Shaderless also applies what it learns to shaders
 > **Known limit:** areas you've never visited can still hitch the first time (on Valor Mortis it was short, about one
 > burst while new content streamed in). Keep Record on and Re-Compile, and they get covered.
 
-## Test results (our own, 1 game)
+## Test results (our own, 2 games)
+
+### Valor Mortis (Steam)
 
 *Valor Mortis (Unreal Engine 5, Proton) · RTX 3070 · NVIDIA 615.78.08 · CachyOS · ~10 min per session.
 Timings measured by the recorder itself.*
