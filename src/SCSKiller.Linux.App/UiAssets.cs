@@ -458,6 +458,12 @@ public static class UiAssets
 
     // Set up bidirectional bridge
     let bridgeReady = false;
+    let stateReceived = false;
+    const origUpdateState = updateState;
+    updateState = function(state) {
+      stateReceived = true;
+      origUpdateState(state);
+    };
     function setupBridge() {
       if (window.external && window.external.receiveMessage) {
         window.external.receiveMessage(onMessage);
@@ -469,14 +475,14 @@ public static class UiAssets
     }
     setupBridge();
 
-    // Safety fallback: if state hasn't populated within 600ms, request it again
+    // Safety fallback: if state hasn't arrived yet, request it again
     const retryInterval = setInterval(() => {
-      if (currentGames.length === 0) {
+      if (!stateReceived) {
         scanGames();
       } else {
         clearInterval(retryInterval);
       }
-    }, 500);
+    }, 1500);
   </script>
 </body>
 </html>

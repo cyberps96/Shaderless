@@ -19,15 +19,17 @@ public class MesaBackend : IDriverBackend
         string deviceName = _vendor == GpuVendor.Amd ? "AMD Radeon GPU" : "Intel Graphics";
         string driverVersion = "Mesa";
 
+        // 1. Try vulkaninfo --summary first (works on pure Wayland without mesa-utils/glxinfo)
         try
         {
             using var proc = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = "glxinfo",
-                    Arguments = "-B",
+                    FileName = "vulkaninfo",
+                    Arguments = "--summary",
                     RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 }
@@ -36,50 +38,112 @@ public class MesaBackend : IDriverBackend
             var output = await proc.StandardOutput.ReadToEndAsync(cancellationToken);
             await proc.WaitForExitAsync(cancellationToken);
 
-            var lines = output.Split('\n');
-            foreach (var line in lines)
+            foreach (var line in output.Split('\n'))
             {
-                if (line.Contains("OpenGL renderer string:", StringComparison.OrdinalIgnoreCase))
+                if (line.Contains("deviceName", StringComparison.OrdinalIgnoreCase) && line.Contains('='))
                 {
-                    deviceName = line.Split(':', 2)[1].Trim();
+                    var name = line.Split('=', 2)[1].Trim();
+                    if (!name.Contains("llvmpipe", StringComparison.OrdinalIgnoreCase))
+                        deviceName = name;
                 }
-                else if (line.Contains("OpenGL version string:", StringComparison.OrdinalIgnoreCase))
+                else if (line.Contains("driverInfo", StringComparison.OrdinalIgnoreCase) && line.Contains('='))
                 {
-                    driverVersion = line.Split(':', 2)[1].Trim();
+                    var info = line.Split('=', 2)[1].Trim();
+                    if (!string.IsNullOrWhiteSpace(info))
+                        driverVersion = info;
                 }
             }
         }
         catch { }
 
-        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string cachePath = Path.Combine(home, ".cache", "mesa_shader_cache_sf");
-        if (!Directory.Exists(cachePath))
-        {
-            string legacyPath = Path.Combine(home, ".cache", "mesa_shader_cache");
-            if (Directory.Exists(legacyPath))
-            {
-                cachePath = legacyPath;
-            }
-        }
-
-        long totalSize = 0;
-        int fileCount = 0;
-
-        if (Directory.Exists(cachePath))
+        // 2. Fallback to glxinfo -B if deviceName is still generic
+        if (deviceName is "AMD Radeon GPU" or "Intel Graphics")
         {
             try
             {
-                var files = Directory.GetFiles(cachePath, "*", SearchOption.AllDirectories);
-                fileCount = files.Length;
-                foreach (var file in files)
+                using var proc = new Process
                 {
-                    totalSize += new FileInfo(file).Length;
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "glxinfo",
+                        Arguments = "-B",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+                proc.Start();
+                var output = await proc.StandardOutput.ReadToEndAsync(cancellationToken);
+                await proc.WaitForExitAsync(cancellationToken);
+
+                foreach (var line in output.Split('\n'))
+                {
+                    if (line.Contains("OpenGL renderer string:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        deviceName = line.Split(':', 2)[1].Trim();
+                    }
+                    else if (line.Contains("OpenGL version string:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        driverVersion = line.Split(':', 2)[1].Trim();
+                    }
                 }
             }
             catch { }
         }
 
-        var status = Directory.Exists(cachePath) ? DriverCacheStatus.Healthy : DriverCacheStatus.DirectoryMissing;
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string? envCacheDir = Environment.GetEnvironmentVariable("MESA_SHADER_CACHE_DIR");
+        string[] candidateDirs = new[]
+        {
+            !string.IsNullOrWhiteSpace(envCacheDir) ? Path.Combine(envCacheDir, "mesa_shader_cache_db") : "",
+            !string.IsNullOrWhiteSpace(envCacheDir) ? Path.Combine(envCacheDir, "mesa_shader_cache_sf") : "",
+            !string.IsNullOrWhiteSpace(envCacheDir) ? envCacheDir : "",
+            Path.Combine(home, ".cache", "mesa_shader_cache_db"),
+            Path.Combine(home, ".cache", "mesa_shader_cache_sf"),
+            Path.Combine(home, ".cache", "mesa_shader_cache")
+        }.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToArray();
+
+        string cachePath = candidateDirs.FirstOrDefault(Directory.Exists)
+            ?? Path.Combine(home, ".cache", "mesa_shader_cache_db");
+
+        long globalSize = 0;
+        int globalFiles = 0;
+
+        foreach (var dir in candidateDirs.Where(Directory.Exists))
+        {
+            try
+            {
+                var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
+                globalFiles += files.Length;
+                foreach (var file in files)
+                {
+                    globalSize += new FileInfo(file).Length;
+                }
+            }
+            catch { }
+        }
+
+        // Measure Steam per-game shader caches
+        long steamSize = 0;
+        int steamFiles = 0;
+        string steamShaderCache = Path.Combine(home, ".local", "share", "Steam", "steamapps", "shadercache");
+        if (Directory.Exists(steamShaderCache))
+        {
+            try
+            {
+                var files = Directory.GetFiles(steamShaderCache, "*", SearchOption.AllDirectories);
+                steamFiles = files.Length;
+                foreach (var file in files)
+                {
+                    steamSize += new FileInfo(file).Length;
+                }
+            }
+            catch { }
+        }
+
+        long totalSize = globalSize + steamSize;
+        var status = (Directory.Exists(cachePath) || totalSize > 0) ? DriverCacheStatus.Healthy : DriverCacheStatus.DirectoryMissing;
         string? message = status == DriverCacheStatus.DirectoryMissing ? "Mesa shader cache directory not yet created." : null;
 
         return new DriverInfo(
@@ -88,10 +152,10 @@ public class MesaBackend : IDriverBackend
             DriverName: _vendor == GpuVendor.Amd ? "Mesa RADV (ACO)" : "Mesa ANV",
             DriverVersion: driverVersion,
             ShaderCachePath: cachePath,
-            CacheSizeBytes: totalSize,
-            CachedFilesCount: fileCount,
-            SteamShaderCacheSizeBytes: 0,
-            SteamShaderCacheFilesCount: 0,
+            CacheSizeBytes: globalSize,
+            CachedFilesCount: globalFiles,
+            SteamShaderCacheSizeBytes: steamSize,
+            SteamShaderCacheFilesCount: steamFiles,
             TotalCacheSizeBytes: totalSize,
             Status: status,
             StatusMessage: message
@@ -103,6 +167,10 @@ public class MesaBackend : IDriverBackend
         return await Task.Run(() =>
         {
             string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            long totalBytes = 0;
+            int totalFiles = 0;
+            string foundPath = string.Empty;
+
             if (source == GameSource.Steam)
             {
                 string targetPath = Path.Combine(home, ".local", "share", "Steam", "steamapps", "shadercache", gameId);
@@ -111,30 +179,31 @@ public class MesaBackend : IDriverBackend
                     try
                     {
                         var files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories);
-                        long bytes = 0;
-                        foreach (var f in files) bytes += new FileInfo(f).Length;
-                        return (bytes, files.Length, targetPath);
-                    }
-                    catch { }
-                }
-            }
-            else if (!string.IsNullOrEmpty(prefixPath))
-            {
-                string targetPath = Path.Combine(prefixPath, "shadercache");
-                if (Directory.Exists(targetPath))
-                {
-                    try
-                    {
-                        var files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories);
-                        long bytes = 0;
-                        foreach (var f in files) bytes += new FileInfo(f).Length;
-                        return (bytes, files.Length, targetPath);
+                        foreach (var f in files) totalBytes += new FileInfo(f).Length;
+                        totalFiles += files.Length;
+                        foundPath = targetPath;
                     }
                     catch { }
                 }
             }
 
-            return (0L, 0, string.Empty);
+            if (!string.IsNullOrEmpty(prefixPath))
+            {
+                string prefixCache = Path.Combine(prefixPath, "shadercache");
+                if (Directory.Exists(prefixCache))
+                {
+                    try
+                    {
+                        var files = Directory.GetFiles(prefixCache, "*", SearchOption.AllDirectories);
+                        foreach (var f in files) totalBytes += new FileInfo(f).Length;
+                        totalFiles += files.Length;
+                        if (string.IsNullOrEmpty(foundPath)) foundPath = prefixCache;
+                    }
+                    catch { }
+                }
+            }
+
+            return (totalBytes, totalFiles, foundPath);
         });
     }
 

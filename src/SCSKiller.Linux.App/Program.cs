@@ -9,7 +9,7 @@ namespace SCSKiller.Linux.App;
 
 class Program
 {
-    [System.Runtime.InteropServices.DllImport("libc", SetLastError = true)]
+    [System.Runtime.InteropServices.DllImport("libc.so.6", SetLastError = true)]
     private static extern int setenv(string name, string value, int overwrite);
 
     private static void SetNativeEnv(string name, string value)
@@ -21,7 +21,7 @@ class Program
     [STAThread]
     static void Main(string[] args)
     {
-        // Fix GTK3 / WebKitGTK Error 71 (Protocol error dispatching to Wayland display) on NVIDIA + Wayland
+        // Fix GTK3 / WebKitGTK Wayland & DMA-BUF rendering issues on both NVIDIA and AMD (RADV)
         SetNativeEnv("GDK_BACKEND", "x11");
         SetNativeEnv("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         SetNativeEnv("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
@@ -38,9 +38,27 @@ class Program
         IDriverBackend? driverBackend = null;
         GameManager gameManager = new GameManager();
         bool clientAcknowledged = false;
+        var stateLock = new SemaphoreSlim(1, 1);
+        var sendLock = new object();
 
-        async Task SendCurrentStateAsync()
+        void SafeSendWebMessage(string json)
         {
+            lock (sendLock)
+            {
+                window.SendWebMessage(json);
+            }
+        }
+
+        async Task SendCurrentStateAsync(bool waitIfBusy = false)
+        {
+            if (waitIfBusy)
+            {
+                await stateLock.WaitAsync();
+            }
+            else if (!await stateLock.WaitAsync(0))
+            {
+                return;
+            }
             try
             {
                 if (driverBackend == null)
@@ -58,11 +76,15 @@ class Program
                     games
                 }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-                window.SendWebMessage(payload);
+                SafeSendWebMessage(payload);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error preparing state dispatch: {ex.Message}");
+            }
+            finally
+            {
+                stateLock.Release();
             }
         }
 
@@ -94,7 +116,7 @@ class Program
                     {
                         string gameId = doc.RootElement.GetProperty("gameId").GetString()!;
                         // the bar shows at once: the scan below reads every library first
-                        window.SendWebMessage(JsonSerializer.Serialize(new
+                        SafeSendWebMessage(JsonSerializer.Serialize(new
                         {
                             type = "progress", gameId, gameName = "", processedShaders = 0, totalShaders = 0, percentage = 0,
                             currentAction = "Starting...", isComplete = false, failed = false, errorMessage = (string?)null
@@ -121,11 +143,11 @@ class Program
                                     errorMessage = progress.ErrorMessage
                                 };
                                 var pJson = JsonSerializer.Serialize(pObj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-                                window.SendWebMessage(pJson);
+                                SafeSendWebMessage(pJson);
                             }
 
                             // Refresh driver cache stats
-                            await SendCurrentStateAsync();
+                            await SendCurrentStateAsync(waitIfBusy: true);
                         }
                     }
                     else if (action == "compile-all")
@@ -152,11 +174,11 @@ class Program
                                     errorMessage = progress.ErrorMessage
                                 };
                                 var pJson = JsonSerializer.Serialize(pObj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-                                window.SendWebMessage(pJson);
+                                SafeSendWebMessage(pJson);
                             }
                         }
 
-                        await SendCurrentStateAsync();
+                        await SendCurrentStateAsync(waitIfBusy: true);
                     }
                     else if (action == "clear-game")
                     {
@@ -167,12 +189,12 @@ class Program
                         {
                             await driverBackend.ClearGameCacheAsync(game.Id, game.Source, game.PrefixPath);
                         }
-                        await SendCurrentStateAsync();
+                        await SendCurrentStateAsync(waitIfBusy: true);
                     }
                     else if (action == "clear-cache" || action == "clear-all")
                     {
                         await driverBackend.ClearAllCachesAsync();
-                        await SendCurrentStateAsync();
+                        await SendCurrentStateAsync(waitIfBusy: true);
                     }
                     else if (action == "toggle-recorder")
                     {
@@ -189,9 +211,9 @@ class Program
                             }
                             catch (Exception ex) { error = ex.Message; }
                             if (error != null)
-                                window.SendWebMessage(JsonSerializer.Serialize(new { type = "error", gameId, message = error }));
+                                SafeSendWebMessage(JsonSerializer.Serialize(new { type = "error", gameId, message = error }));
                         }
-                        await SendCurrentStateAsync();
+                        await SendCurrentStateAsync(waitIfBusy: true);
                     }
                 }
                 catch (Exception ex)
