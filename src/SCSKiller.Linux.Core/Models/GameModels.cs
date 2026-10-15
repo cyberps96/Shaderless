@@ -47,5 +47,6 @@ public record GameInfo(
     long CacheSizeBytes = 0,
     int CachedFilesCount = 0,
     bool RecorderInstalled = false,
-    int RecordedPsos = 0
+    int RecordedPsos = 0,
+    string? GlCachePath = null   // Lutris: the folder its __GL_SHADER_DISK_CACHE_PATH points to for this game (the driver adds /GLCache)
 );

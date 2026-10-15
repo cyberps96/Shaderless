@@ -856,60 +856,75 @@ public class ProtonRunner
     /// vkd3d-proton: &lt;prefix&gt;/shadercache/VKD3D_shader_cache; NVIDIA: &lt;__GL_SHADER_DISK_CACHE_PATH&gt;/GLCache, which Lutris
     /// sets to the game's folder (the prefix for a launcher-installed game). The compile writes into a folder of its own
     /// (&lt;prefix&gt;/shadercache/&lt;id&gt;), so what it built is installed there. Other launchers are left as they are.</summary>
+    const string InstalledManifest = "installed-files.txt";
+
     static void InstallCachesWhereGameReads(GameInfo game, string vkd3dCache, string glCache)
     {
         if (game.Source != GameSource.Lutris || string.IsNullOrEmpty(game.PrefixPath)) return;
         string prefix = game.PrefixPath;
+        var installed = new List<string>();
         try
         {
-            // vkd3d-proton
+            // vkd3d-proton: the folder the game's Proton settings give it (see EnsureProtonLocalShaderCacheSetting)
             string gameVkd3d = Path.Combine(prefix, "shadercache", "VKD3D_shader_cache");
             if (Directory.Exists(vkd3dCache))
             {
                 Directory.CreateDirectory(gameVkd3d);
                 foreach (var cache in Directory.GetFiles(vkd3dCache, "*.cache"))
                 {
-                    try { MergeOrReplaceVkd3dCache(cache, Path.Combine(gameVkd3d, Path.GetFileName(cache))); } catch { }
+                    string dest = Path.Combine(gameVkd3d, Path.GetFileName(cache));
+                    try { MergeOrReplaceVkd3dCache(cache, dest); installed.Add(dest); } catch { }
                 }
             }
 
-            // NVIDIA: the folders under GLCache are named by the driver (the same ones the game itself uses)
-            string gameGl = Path.Combine(prefix, "GLCache");
+            // NVIDIA: <the game's __GL_SHADER_DISK_CACHE_PATH>/GLCache; the folders under it are named by the driver
+            // (the same ones the game itself uses). Lutris sets that path to the prefix for a launcher-installed game and to
+            // the exe's folder for a game added by its exe.
+            string gameGl = Path.Combine(string.IsNullOrEmpty(game.GlCachePath) ? prefix : game.GlCachePath, "GLCache");
             if (Directory.Exists(glCache))
             {
                 foreach (var file in Directory.GetFiles(glCache, "*", SearchOption.AllDirectories)
                              .Where(f => NvidiaReadOnlyCacheNames.Contains(Path.GetFileName(f))))
                 {
-                    try { LinkOrCopy(file, Path.Combine(gameGl, Path.GetRelativePath(glCache, file))); } catch { }
+                    string dest = Path.Combine(gameGl, Path.GetRelativePath(glCache, file));
+                    try { LinkOrCopy(file, dest); installed.Add(dest); } catch { }
                 }
             }
+
+            // what was put there, so Clear can take exactly that out again
+            File.WriteAllLines(Path.Combine(Path.GetDirectoryName(vkd3dCache)!, InstalledManifest), installed);
         }
         catch { }
     }
 
     /// <summary>Removes what <see cref="InstallCachesWhereGameReads"/> put in the game's cache folders (called before the
-    /// compile's own folder &lt;prefix&gt;/shadercache/&lt;id&gt; is deleted, which says what was installed).</summary>
+    /// compile's own folder &lt;prefix&gt;/shadercache/&lt;id&gt; is deleted, which lists what was installed).</summary>
     public static void RemoveInstalledCaches(string prefix, string gameId)
     {
         try
         {
             string own = Path.Combine(prefix, "shadercache", gameId);
+            string manifest = Path.Combine(own, InstalledManifest);
+            if (File.Exists(manifest))
+            {
+                foreach (var path in File.ReadAllLines(manifest).Where(l => l.Length > 0))
+                    try { File.Delete(path); } catch { }
+                return;
+            }
+
+            // a compile from before the list was kept: the prefix's own folders
             string ownGl = Path.Combine(own, "nvidiav1", "GLCache");
             if (Directory.Exists(ownGl))
             {
                 foreach (var file in Directory.GetFiles(ownGl, "*", SearchOption.AllDirectories)
                              .Where(f => NvidiaReadOnlyCacheNames.Contains(Path.GetFileName(f))))
-                {
                     try { File.Delete(Path.Combine(prefix, "GLCache", Path.GetRelativePath(ownGl, file))); } catch { }
-                }
             }
             string ownVkd3d = Path.Combine(own, "VKD3D_shader_cache");
             if (Directory.Exists(ownVkd3d))
             {
                 foreach (var cache in Directory.GetFiles(ownVkd3d, "*.cache"))
-                {
                     try { File.Delete(Path.Combine(prefix, "shadercache", "VKD3D_shader_cache", Path.GetFileName(cache))); } catch { }
-                }
             }
         }
         catch { }

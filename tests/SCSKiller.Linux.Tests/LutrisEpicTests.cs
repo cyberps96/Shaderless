@@ -90,4 +90,55 @@ public class LutrisEpicTests
         Assert.IsNull(LutrisLinuxSource.WindowsPathToLinux("/tmp/none", "not a path"));
         Assert.IsNull(LutrisLinuxSource.WindowsPathToLinux("/tmp/none", "C:\\x"));   // no drive_c there
     }
+
+    [TestMethod]
+    public void Game_Section_Reads_Exe_And_Prefix_Only_From_The_Game_Block()
+    {
+        var cfg = LutrisLinuxSource.ParseGameSection(new[]
+        {
+            "game:",
+            "  exe: /home/u/Games/My Game/Binaries/Win64/My.exe",
+            "  prefix: '/home/u/test games'",
+            "  args: -x",
+            "wine:",
+            "  version: proton-cachyos-slr",
+            "  exe: should-not-be-read",
+        });
+        Assert.AreEqual("/home/u/Games/My Game/Binaries/Win64/My.exe", cfg["exe"]);
+        Assert.AreEqual("/home/u/test games", cfg["prefix"]);
+        Assert.IsFalse(cfg.ContainsKey("version"));
+    }
+
+    [TestMethod]
+    public void Game_Section_Ignores_Nested_Script_Block()
+    {
+        var cfg = LutrisLinuxSource.ParseGameSection(new[]
+        {
+            "game:", "  exe: a.exe", "script:", "  game:", "    exe: nested.exe",
+        });
+        Assert.AreEqual("a.exe", cfg["exe"]);
+    }
+
+    [TestMethod]
+    public void Unreal_Install_Root_Is_The_Folder_With_Engine()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "shaderless-test-" + Guid.NewGuid().ToString("N"));
+        string exeDir = Path.Combine(root, "Game", "Binaries", "Win64");
+        Directory.CreateDirectory(exeDir);
+        Directory.CreateDirectory(Path.Combine(root, "Engine"));
+        try
+        {
+            Assert.AreEqual(root, LutrisLinuxSource.InferInstallRoot(Path.Combine(exeDir, "Game.exe")));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [TestMethod]
+    public void Other_Games_Use_The_Exe_Folder_As_Install_Root()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "shaderless-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try { Assert.AreEqual(dir, LutrisLinuxSource.InferInstallRoot(Path.Combine(dir, "x.exe"))); }
+        finally { Directory.Delete(dir, true); }
+    }
 }
