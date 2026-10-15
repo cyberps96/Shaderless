@@ -21,7 +21,7 @@ Modern games (especially Unreal Engine 5) compile shaders while you play. Every 
 game for a moment. Shaderless compiles them ahead of time, through **the same Proton / vkd3d-proton your game
 uses**, so the game finds them already compiled.
 
-- Finds your games in **Steam**, **Heroic** (Epic games) and **Lutris** (games installed in their own folder). See [Library support](#library-support) for what's tested
+- Finds your games in **Steam**, **Heroic** (Epic games) and **Lutris** (Epic Store games and games in their own folder). See [Library support](#library-support) for what's tested
 - Reads the game's own shader archives using SCSKiller's engine readers (Unreal, Unity, FromSoftware, RE Engine, REDengine, Dagor, Northlight, …)
 - Compiles everything with all CPU cores, inside the game's own Proton prefix and Proton version
 - **⏺ Record mode:** learns exactly what your game asks for while you play, then compiles exactly that
@@ -33,8 +33,9 @@ uses**, so the game finds them already compiled.
 | **Steam** | Works. Tested on this port's main test machine. |
 | **Heroic, Epic games** | Games are found (checked with one game). Compiling a Heroic game hasn't been tested much. |
 | **Heroic, GOG / Amazon** | **Not supported yet.** |
+| **Lutris, Epic Games Store games** (installed through Lutris) | Works. Found, compiled and cache detected on one game (End of Abyss, Unreal Engine 5). |
 | **Lutris, games in their own folder** | Implemented, but not tested on a real library. |
-| **Lutris, Epic / GOG through a launcher in a Wine prefix** | **Not found yet.** Lutris stores the launcher's folder, not the game's. |
+| **Lutris, GOG / other launchers in a Wine prefix** | **Not found yet.** |
 
 If your games don't show up, please [open an issue](../../issues) with the launcher and where the game lives.
 
@@ -112,7 +113,7 @@ WINEDLLOVERRIDES="d3d12=n,b" %command%
 
 - **The window doesn't open / is blank (Wayland, AMD or NVIDIA):** start it with `./run-gui.sh` (it sets `GDK_BACKEND=x11` and turns off WebKit's DMA-BUF renderer). Don't launch the binary directly.
 - **`webkit2gtk` / `libwebkit2gtk-4.1` not found:** install it (Arch/CachyOS: `webkit2gtk-4.1`, Debian/Ubuntu: `libwebkit2gtk-4.1-0`, Fedora: `webkit2gtk4.1`).
-- **No games listed:** Shaderless reads Steam, Heroic (Epic) and Lutris libraries from their default folders. Games that Lutris runs through a launcher (for example Epic Games Store inside a Wine prefix) aren't found yet. Run `./run-cli.sh list` to see what it finds.
+- **No games listed:** Shaderless reads Steam, Heroic (Epic) and Lutris libraries from their default folders. Lutris games that run through a launcher other than the Epic Games Store (for example GOG Galaxy) aren't found yet. Run `./run-cli.sh list` to see what it finds.
 - **Which version am I on?** It's shown in the app header, or run `./run-cli.sh --version`. Please include it in bug reports.
 - **Games with anti-cheat:** see [Anti-cheat games](#anti-cheat-games) below.
 

@@ -189,7 +189,7 @@ public class MesaBackend : IDriverBackend
 
             if (!string.IsNullOrEmpty(prefixPath))
             {
-                string prefixCache = Path.Combine(prefixPath, "shadercache");
+                string prefixCache = Path.Combine(prefixPath, "shadercache", gameId);
                 if (Directory.Exists(prefixCache))
                 {
                     try
@@ -236,6 +236,15 @@ public class MesaBackend : IDriverBackend
             if (source == GameSource.Steam)
             {
                 string targetPath = Path.Combine(home, ".local", "share", "Steam", "steamapps", "shadercache", gameId);
+                if (Directory.Exists(targetPath))
+                {
+                    try { Directory.Delete(targetPath, true); } catch { }
+                }
+            }
+            else if (!string.IsNullOrEmpty(prefixPath))
+            {
+                // the per-game folder only: a prefix can be shared between games
+                string targetPath = Path.Combine(prefixPath, "shadercache", gameId);
                 if (Directory.Exists(targetPath))
                 {
                     try { Directory.Delete(targetPath, true); } catch { }

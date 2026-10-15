@@ -136,9 +136,9 @@ public class NvidiaBackend : IDriverBackend
                     catch { }
                 }
             }
-            else if (source == GameSource.Heroic && !string.IsNullOrEmpty(prefixPath))
+            else if (source != GameSource.Steam && !string.IsNullOrEmpty(prefixPath))
             {
-                string targetPath = Path.Combine(prefixPath, "shadercache");
+                string targetPath = Path.Combine(prefixPath, "shadercache", gameId);   // the per-game folder: prefixes can be shared between games
                 if (Directory.Exists(targetPath))
                 {
                     try
@@ -194,9 +194,9 @@ public class NvidiaBackend : IDriverBackend
                     try { Directory.Delete(targetPath, true); } catch { }
                 }
             }
-            else if (source == GameSource.Heroic && !string.IsNullOrEmpty(prefixPath))
+            else if (source != GameSource.Steam && !string.IsNullOrEmpty(prefixPath))
             {
-                string targetPath = Path.Combine(prefixPath, "shadercache");
+                string targetPath = Path.Combine(prefixPath, "shadercache", gameId);   // the per-game folder: prefixes can be shared between games
                 if (Directory.Exists(targetPath))
                 {
                     try { Directory.Delete(targetPath, true); } catch { }
