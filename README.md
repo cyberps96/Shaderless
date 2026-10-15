@@ -46,11 +46,11 @@ If your games don't show up, please [open an issue](../../issues) with the launc
 
 Needs Steam with **Proton** (Heroic / Lutris libraries are partly supported, see [Library support](#library-support)), and WebKitGTK (`webkit2gtk-4.1`) for the window.
 
-Download **`Shaderless-v0.1.1-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
+Download **`Shaderless-v0.1.2-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
 
 ```bash
-tar -xzf Shaderless-v0.1.1-beta-linux-x64.tar.gz
-cd Shaderless-v0.1.1-beta-linux-x64
+tar -xzf Shaderless-v0.1.2-beta-linux-x64.tar.gz
+cd Shaderless-v0.1.2-beta-linux-x64
 ./run-gui.sh          # launch the app
 ./install-desktop.sh  # optional: adds Shaderless (with its icon) to your app menu and desktop
 ```
