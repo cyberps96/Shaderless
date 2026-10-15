@@ -31,11 +31,8 @@ uses**, so the game finds them already compiled.
 | Launcher | Status |
 |---|---|
 | **Steam** | Works. Tested on this port's main test machine. |
-| **Heroic, Epic games** | Games are found (checked with one game). Compiling a Heroic game hasn't been tested much. |
-| **Heroic, GOG / Amazon** | **Not supported yet.** |
-| **Lutris, Epic Games Store games** (installed through Lutris) | Works. Found, compiled and cache detected on one game (End of Abyss, Unreal Engine 5). |
-| **Lutris, games in their own folder** | Implemented, but not tested on a real library. |
-| **Lutris, GOG / other launchers in a Wine prefix** | **Not found yet.** |
+| **Heroic** | **Epic games:** found (checked with one game); compiling a Heroic game hasn't been tested much. **GOG / Amazon:** not supported yet. |
+| **Lutris** | **Epic Games Store games** (installed through Lutris): works. Found, compiled and cache detected on one game (End of Abyss, Unreal Engine 5). **Games in their own folder:** implemented, but not tested on a real library. **GOG / other launchers in a Wine prefix:** not found yet. |
 
 If your games don't show up, please [open an issue](../../issues) with the launcher and where the game lives.
 
