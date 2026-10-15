@@ -50,6 +50,8 @@ Same machine as above. Timings measured by the recorder itself. A pipeline creat
 
 Sessions 2 and 3 repeat the route of session 1 (about 7,250 pipeline creates each, so the comparison is like for like). Session 3 then goes into an area that session 1 and 2 never visited, and that is where the remaining hitch is. One game, one route, no frame-time measurements.
 
+> **Caveat:** the game also writes its own shader cache while you play, and that cache was still in place for sessions 2 and 3. So part of the improvement may come from the game's own cache from the previous session, not only from Shaderless. We have not yet run a test that separates the two, and the Valor Mortis table above has the same limit.
+
 ## Install
 
 ### Option 1: Pre-built Release (No .NET SDK needed)
