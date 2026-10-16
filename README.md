@@ -9,7 +9,7 @@
 Shaderless is not affiliated with or endorsed by the SCSKiller project. Bugs in this port are ours. Please don't report them to SCSKiller.
 
 > [!WARNING]
-> **Beta.** Tested on **NVIDIA** only. AMD should work, but nobody has confirmed it yet (0.1.1 includes a Wayland/AMD startup fix that is also unconfirmed). [**AMD testers wanted!**](#-amd-testers-wanted)
+> **Beta.** Compiling is tested on **NVIDIA** only. On **AMD** the app opens and runs (a tester confirmed it), but nobody has confirmed a compile result there yet. [**AMD testers wanted!**](#-amd-testers-wanted)
 
 <p align="center"><img src="assets/screenshot.png" alt="Shaderless Main Window" width="100%"></p>
 
@@ -33,6 +33,7 @@ uses**, so the game finds them already compiled.
 | **Steam** | Works. Tested on this port's main test machine. |
 | **Heroic** | **Epic games:** found, compiled in the game's own prefix, and the cache installed where the game reads it (checked with one game, whose settings we read while it ran). That game is Direct3D 11 and did not benefit, see the DirectX 11 note below. A Heroic DirectX 12 game hasn't been tested. **GOG / Amazon:** not supported yet. |
 | **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% (one game, see [test results](#test-results-our-own-2-games)). **Games added by their exe** (for example a DRM-free copy): found, compiled, and the cache installed where the game reads it, checked with the game's real settings (one game, Proton-CachyOS; no stutter measurements). **Games from a Lutris installer script:** implemented, not tested. **GOG / other launchers in a Wine prefix:** not found yet. |
+| **Flatpak versions** of Steam, Heroic and Lutris | **Not supported yet.** Shaderless only looks in the normal install folders, so games from a Flatpak install don't show up. |
 
 **DirectX 11 games:** Shaderless is built for DirectX 12 games. On Linux, DirectX 11 games run through DXVK, which builds its pipelines when the game draws, so compiling ahead of time has little to prepare. We tested one DirectX 11 game (A Short Hike, through Heroic): the game still wrote its own shader cache at startup, and into a different folder from the one our compile fills. Expect little or no benefit for DirectX 11 games for now.
 
@@ -122,7 +123,7 @@ WINEDLLOVERRIDES="d3d12=n,b" %command%
 
 - **The window doesn't open / is blank (Wayland, AMD or NVIDIA):** start it with `./run-gui.sh` (it sets `GDK_BACKEND=x11` and turns off WebKit's DMA-BUF renderer). Don't launch the binary directly.
 - **`webkit2gtk` / `libwebkit2gtk-4.1` not found:** install it (Arch/CachyOS: `webkit2gtk-4.1`, Debian/Ubuntu: `libwebkit2gtk-4.1-0`, Fedora: `webkit2gtk4.1`).
-- **No games listed:** Shaderless reads Steam, Heroic (Epic) and Lutris libraries from their default folders. Lutris games that run through a launcher other than the Epic Games Store (for example GOG Galaxy) aren't found yet. Run `./run-cli.sh list` to see what it finds.
+- **No games listed:** Shaderless reads Steam, Heroic (Epic) and Lutris libraries from their normal install folders. **Flatpak installs of these are not supported yet.** Lutris games that run through a launcher other than the Epic Games Store (for example GOG Galaxy) aren't found yet. Run `./run-cli.sh list` to see what it finds.
 - **Which version am I on?** It's shown in the app header, or run `./run-cli.sh --version`. Please include it in bug reports.
 - **Games with anti-cheat:** see [Anti-cheat games](#anti-cheat-games) below.
 
@@ -146,7 +147,7 @@ WINEDLLOVERRIDES="d3d12=n,b" %command%
 
 ## 🔴 AMD testers wanted
 
-Shaderless switches to AMD mode automatically (Mesa / RADV), but it hasn't been tested on AMD yet. If you have an AMD
+Shaderless switches to AMD mode automatically (Mesa / RADV). The app opens and runs on AMD (a tester confirmed it), but nobody has confirmed a compile result yet. If you have an AMD
 GPU, please try **Record → play → Re-Compile → play** on any DX12 Proton game and
 [open an **AMD test report** issue](../../issues/new?template=amd-test-report.yml). The most useful part is **where the
 shader cache was written** and how big it is. Check:
