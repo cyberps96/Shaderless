@@ -48,5 +48,13 @@ public record GameInfo(
     int CachedFilesCount = 0,
     bool RecorderInstalled = false,
     int RecordedPsos = 0,
-    string? GlCachePath = null   // Lutris: the folder its __GL_SHADER_DISK_CACHE_PATH points to for this game (the driver adds /GLCache)
-);
+    string? GlCachePath = null,   // Lutris: the folder its __GL_SHADER_DISK_CACHE_PATH points to for this game (the driver adds /GLCache)
+    bool IsFlatpak = false,
+    string? StaleReason = null,
+    int NewRecordedPsos = 0
+)
+{
+    public string RawId => Id.StartsWith("flatpak_", StringComparison.OrdinalIgnoreCase) ? Id["flatpak_".Length..] : Id;
+    public string SourceLabel => IsFlatpak ? $"{Source} (Flatpak)" : Source.ToString();
+}
+

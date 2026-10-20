@@ -30,7 +30,15 @@ class Program
 
             case "list":
             case "scan":
+            case "games":
                 return await ListGamesAsync(gameManager, driverBackend);
+
+            case "diagnose":
+            case "diag":
+                return await ShowDiagnosticsAsync(gameManager, driverBackend);
+
+            case "settings":
+                return HandleSettingsCommand(args);
 
             case "compile":
                 if (args.Length < 2)
@@ -94,13 +102,51 @@ class Program
     {
         Console.WriteLine("Available commands:");
         Console.WriteLine("  ./run-cli.sh status              Show GPU driver and shader cache stats");
-        Console.WriteLine("  ./run-cli.sh list                List detected games across Steam, Heroic & Lutris");
+        Console.WriteLine("  ./run-cli.sh list                List detected games across Steam, Heroic & Lutris (Native + Flatpak)");
+        Console.WriteLine("  ./run-cli.sh diagnose            Inspect all checked library paths, discovered games, and skipped entries");
+        Console.WriteLine("  ./run-cli.sh settings            Show or update automation settings (all default to OFF)");
         Console.WriteLine("  ./run-cli.sh compile <id|name>   Pre-compile shaders for a specific game");
         Console.WriteLine("  ./run-cli.sh compile-all         Pre-compile shaders for all uncompiled games");
         Console.WriteLine("  ./run-cli.sh clear <id|name>     Purge shader cache for a specific game (e.g. cyberpunk)");
         Console.WriteLine("  ./run-cli.sh clear-all           Purge ALL GPU driver and game shader caches");
         Console.WriteLine("  ./run-cli.sh clear-cache         Interactive cache clearing menu");
         Console.WriteLine();
+    }
+
+    static int HandleSettingsCommand(string[] args)
+    {
+        var settings = SCSKiller.Linux.Core.SettingsManager.Load();
+        bool modified = false;
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            if (args[i].Equals("--auto-record", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                bool val = args[++i] is "on" or "true" or "1";
+                settings = settings with { AutoRecordAllGames = val };
+                modified = true;
+            }
+            else if (args[i].Equals("--auto-compile", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                bool val = args[++i] is "on" or "true" or "1";
+                settings = settings with { AutoCompileOnExit = val };
+                modified = true;
+            }
+        }
+
+        if (modified)
+        {
+            SCSKiller.Linux.Core.SettingsManager.Save(settings);
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("Updated settings saved.\n");
+            Console.ResetColor();
+        }
+
+        Console.WriteLine($"Settings file: {SCSKiller.Linux.Core.SettingsManager.DefaultSettingsFilePath}");
+        Console.WriteLine($"  Auto-Record All Games:          {(settings.AutoRecordAllGames ? "ON" : "OFF")}");
+        Console.WriteLine($"  Auto-Compile After Game Closes: {(settings.AutoCompileOnExit ? "ON" : "OFF")}");
+        Console.WriteLine("\nUsage: ./run-cli.sh settings [--auto-record on|off] [--auto-compile on|off]\n");
+        return 0;
     }
 
     static async Task<int> ShowDriverStatusAsync(IDriverBackend backend)
@@ -136,44 +182,133 @@ class Program
 
     static async Task<int> ListGamesAsync(GameManager manager, IDriverBackend backend)
     {
-        Console.WriteLine("Scanning game libraries (Steam, Heroic, Lutris)...");
+        Console.WriteLine("Scanning game libraries (Steam, Heroic, Lutris — Native & Flatpak)...");
         var games = await manager.ScanAllGamesAsync(backend);
 
         if (games.Count == 0)
         {
-            Console.WriteLine("No games discovered in default Steam, Heroic, or Lutris libraries.");
+            Console.WriteLine("No games discovered in Steam, Heroic, or Lutris libraries.");
+            Console.WriteLine("Tip: Run './run-cli.sh diagnose' to see all checked paths and why entries were skipped.");
             return 0;
         }
 
         Console.WriteLine($"\nFound {games.Count} installed games:\n");
-        Console.WriteLine(string.Format("{0,-10} {1,-32} {2,-14} {3,-15} {4,-10} {5,-12}", "Source", "Name", "Engine", "Status", "Shaders", "Disk Cache"));
-        Console.WriteLine(new string('-', 102));
+        Console.WriteLine(string.Format("{0,-16} {1,-30} {2,-14} {3,-24} {4,-10} {5,-12}", "Source", "Name", "Engine", "Status", "Shaders", "Disk Cache"));
+        Console.WriteLine(new string('-', 112));
 
         foreach (var g in games)
         {
             var color = g.State == CacheState.Cached ? ConsoleColor.Green : ConsoleColor.Yellow;
             Console.ForegroundColor = color;
             string cacheStr = g.CacheSizeBytes > 0 ? FormatBytes(g.CacheSizeBytes) : "0 B";
-            Console.WriteLine(string.Format("{0,-10} {1,-32} {2,-14} {3,-15} {4,-10} {5,-12}",
-                g.Source,
-                Truncate(g.Name, 30),
+            string srcLabel = g.IsFlatpak ? $"{g.Source} (FP)" : g.Source.ToString();
+            string statusLabel = g.State == CacheState.Outdated
+                ? (!string.IsNullOrEmpty(g.StaleReason) ? $"Stale ({g.StaleReason})" : "Stale")
+                : g.State.ToString();
+            Console.WriteLine(string.Format("{0,-16} {1,-30} {2,-14} {3,-24} {4,-10} {5,-12}",
+                srcLabel,
+                Truncate(g.Name, 28),
                 g.Engine,
-                g.State,
+                Truncate(statusLabel, 23),
                 $"~{g.TotalShadersEstimated:N0}",
                 cacheStr));
             Console.ResetColor();
         }
 
-        Console.WriteLine("\nRun './run-cli.sh compile <name>' to pre-compile shaders ahead of time.\n");
+        Console.WriteLine("\nRun './run-cli.sh compile <id|name>' to pre-compile shaders ahead of time.");
+        Console.WriteLine("Run './run-cli.sh diagnose' for detailed library path & manifest diagnostics.\n");
         return 0;
     }
+
+    static async Task<int> ShowDiagnosticsAsync(GameManager manager, IDriverBackend backend)
+    {
+        Console.WriteLine("Running full library discovery diagnostics (Native, XDG, and Flatpak)...\n");
+        var report = await manager.DiagnoseAsync(backend);
+
+        Console.WriteLine($"Driver:         {report.ActiveDriverSummary}");
+        Console.WriteLine($"Default Proton: {report.DefaultProtonBinary ?? "Not found"}");
+        Console.WriteLine($"XDG_DATA_HOME:  {SCSKiller.Linux.Core.AppPaths.GetXdgDataHome()}");
+        Console.WriteLine($"XDG_CONFIG_HOME:{SCSKiller.Linux.Core.AppPaths.GetXdgConfigHome()}");
+        Console.WriteLine($"XDG_CACHE_HOME: {SCSKiller.Linux.Core.AppPaths.GetXdgCacheHome()}");
+
+        foreach (var src in report.Sources)
+        {
+            Console.WriteLine();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"=== {src.Source.ToString().ToUpperInvariant()} ===");
+            Console.ResetColor();
+
+            if (!string.IsNullOrEmpty(src.Error))
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"  Source Error: {src.Error}");
+                Console.ResetColor();
+            }
+
+            Console.WriteLine($"  Checked Paths ({src.CheckedPaths.Count}):");
+            foreach (var p in src.CheckedPaths)
+            {
+                Console.ForegroundColor = p.Exists ? ConsoleColor.Green : ConsoleColor.DarkGray;
+                string status = p.Exists ? "[FOUND]  " : "[MISSING]";
+                Console.WriteLine($"    {status} {p.Description}: {p.Path}");
+                Console.ResetColor();
+            }
+
+            Console.WriteLine($"  Discovered Games ({src.DiscoveredGames.Count}):");
+            if (src.DiscoveredGames.Count == 0)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("    (none)");
+                Console.ResetColor();
+            }
+            else
+            {
+                foreach (var g in src.DiscoveredGames)
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"    + {g.Name} [ID: {g.Id}, Source: {g.SourceLabel}, Engine: {g.Engine}]");
+                    Console.ResetColor();
+                    Console.WriteLine($"      Install: {g.InstallPath}");
+                    Console.WriteLine($"      Exe:     {g.ExecutablePath}");
+                    Console.WriteLine($"      Prefix:  {g.PrefixPath ?? "(default/shared)"}");
+                    Console.WriteLine($"      Cache:   {FormatBytes(g.CacheSizeBytes)} ({g.State})");
+                }
+            }
+
+            Console.WriteLine($"  Skipped Entries ({src.SkippedItems.Count}):");
+            if (src.SkippedItems.Count == 0)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine("    (none)");
+                Console.ResetColor();
+            }
+            else
+            {
+                foreach (var s in src.SkippedItems)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    string fpTag = s.IsFlatpak ? " [Flatpak]" : "";
+                    Console.WriteLine($"    - {s.NameOrId}{fpTag}: {s.Reason}");
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.WriteLine($"      Path: {s.Path}");
+                    Console.ResetColor();
+                }
+            }
+        }
+
+        Console.WriteLine();
+        return 0;
+    }
+
+    static GameInfo? MatchGame(IReadOnlyList<GameInfo> games, string targetQuery) =>
+        games.FirstOrDefault(g => g.Id.Equals(targetQuery, StringComparison.OrdinalIgnoreCase)) ??
+        games.FirstOrDefault(g => g.RawId.Equals(targetQuery, StringComparison.OrdinalIgnoreCase)) ??
+        games.FirstOrDefault(g => g.Name.Contains(targetQuery, StringComparison.OrdinalIgnoreCase));
 
     static async Task<int> CompileGameAsync(GameManager manager, IDriverBackend backend, string targetQuery)
     {
         var games = await manager.ScanAllGamesAsync(backend);
-        var game = games.FirstOrDefault(g =>
-            g.Id.Equals(targetQuery, StringComparison.OrdinalIgnoreCase) ||
-            g.Name.Contains(targetQuery, StringComparison.OrdinalIgnoreCase));
+        var game = MatchGame(games, targetQuery);
 
         if (game == null)
         {
@@ -183,7 +318,7 @@ class Program
             return 1;
         }
 
-        Console.WriteLine($"Preparing pre-compilation for: {game.Name} ({game.Source})");
+        Console.WriteLine($"Preparing pre-compilation for: {game.Name} ({game.SourceLabel}, ID: {game.Id})");
         Console.WriteLine($"Engine: {game.Engine} | Estimated Shaders: {game.TotalShadersEstimated:N0}");
         Console.WriteLine($"Game Directory: {game.InstallPath}\n");
 
@@ -204,9 +339,17 @@ class Program
             return 1;
         }
 
+        if (lastProgress != null && !lastProgress.CacheVerified)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"\n\nWARNING: {lastProgress.CurrentAction}\n");
+            Console.ResetColor();
+            return 0;
+        }
+
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"\n\nSUCCESS: Shaders for '{game.Name}' compiled into GPU driver cache!");
-        Console.WriteLine("Game will now launch with zero shader-compilation stutters.\n");
+        Console.WriteLine($"\n\n{lastProgress?.CurrentAction ?? $"Cache ready for '{game.Name}'."}");
+        Console.WriteLine("Shader cache is installed and ready.\n");
         Console.ResetColor();
 
         return 0;
@@ -237,9 +380,7 @@ class Program
     static async Task<int> ClearGameCacheAsync(GameManager manager, IDriverBackend backend, string targetQuery)
     {
         var games = await manager.ScanAllGamesAsync(backend);
-        var game = games.FirstOrDefault(g =>
-            g.Id.Equals(targetQuery, StringComparison.OrdinalIgnoreCase) ||
-            g.Name.Contains(targetQuery, StringComparison.OrdinalIgnoreCase));
+        var game = MatchGame(games, targetQuery);
 
         if (game == null)
         {
@@ -250,7 +391,7 @@ class Program
         }
 
         var (bytes, files, cachePath) = await backend.GetGameCacheStatsAsync(game.Id, game.Source, game.PrefixPath);
-        Console.WriteLine($"Target game:         {game.Name} ({game.Source}, AppID: {game.Id})");
+        Console.WriteLine($"Target game:         {game.Name} ({game.SourceLabel}, ID: {game.Id})");
         Console.WriteLine($"Cache location:      {(string.IsNullOrEmpty(cachePath) ? "N/A" : cachePath)}");
         Console.WriteLine($"Current cache size:  {FormatBytes(bytes)} ({files:N0} files)");
 

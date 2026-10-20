@@ -87,6 +87,23 @@ public class ShaderCompilerCoordinator
             catch { }
         }
 
+        if (ProtonRunner.IsGameRunning(game))
+        {
+            string runningMsg = $"{game.Name} is currently running. Please close the game before compiling so its cache files aren't locked.";
+            yield return new CompilationProgress(
+                GameId: game.Id,
+                GameName: game.Name,
+                ProcessedShaders: 0,
+                TotalShaders: estimatedTotal,
+                Percentage: 0,
+                CurrentAction: runningMsg,
+                IsComplete: true,
+                Failed: true,
+                ErrorMessage: runningMsg
+            );
+            yield break;
+        }
+
         var driverInfo = await _driverBackend.GetDriverInfoAsync(cancellationToken);
         var caps = driverInfo.Vendor == GpuVendor.Amd
             ? new SCSKiller.Core.VendorCaps(
@@ -105,9 +122,29 @@ public class ShaderCompilerCoordinator
                 RtCacheGranularity: SCSKiller.Core.RtCacheGranularity.Collection,
                 PackageKeyed: true);
 
-        string genDbPath = Path.Combine(workingDir, "scskiller_gen.db");
-        string recDbPath = Path.Combine(workingDir, "scskiller.db");
+        RecorderManager.MigrateLegacyFiles(workingDir);
+        RecorderManager.MigrateLegacyFiles(RecorderManager.GameDir(game.Id));
+        RecorderManager.MigrateLegacyFiles(RecorderManager.ExeDir(game));
+
+        string genDbPath = Path.Combine(workingDir, "shaderless_gen.db");
+        string recDbPath = Path.Combine(workingDir, "shaderless.db");
         int threads = Math.Max(2, Environment.ProcessorCount);
+
+        string currentDriverVersion = driverInfo.DriverVersion;
+        string currentProtonStamp = ProtonRunner.GetProtonStamp(game);
+        string currentGameBuildStamp = ProtonRunner.GetGameBuildStamp(game);
+        string runtimeStamp = $"{currentDriverVersion}|{currentProtonStamp}";
+
+        var (existingBytes, _, _) = await _driverBackend.GetGameCacheStatsAsync(game.Id, game.Source, game.PrefixPath);
+        var (existingVerified, _) = ProtonRunner.VerifyCacheInstalled(game);
+        bool runtimeStale = string.Equals(game.StaleReason, "driver updated", StringComparison.Ordinal)
+                         || string.Equals(game.StaleReason, "Proton updated", StringComparison.Ordinal);
+        bool canIncremental = existingBytes > 0 && existingVerified && !runtimeStale && ProtonRunner.IsRuntimeCacheStampValid(game);
+
+        // Load or seed previously warmed keys BEFORE Planner.Build / Materialize overwrites workingDir/plan.bin & shaderless.db
+        var existingWarmedKeys = canIncremental
+            ? RecorderManager.LoadWarmedKeys(game.Id, runtimeStamp, workingDir)
+            : new HashSet<string>(StringComparer.Ordinal);
 
         yield return new CompilationProgress(
             GameId: game.Id,
@@ -137,7 +174,7 @@ public class ShaderCompilerCoordinator
                     GameSource.Heroic => SCSKiller.Core.Store.Epic,
                     _ => SCSKiller.Core.Store.Manual
                 };
-                var scsGame = new SCSKiller.Core.Game(game.Id, game.Name, scsStore, game.InstallPath, game.ExecutablePath);
+                var scsGame = new SCSKiller.Core.Game(game.RawId, game.Name, scsStore, game.InstallPath, game.ExecutablePath);
                 var reader = CreateAllEngineReaders(appDataDir);
                 var engineInfo = reader.Detect(scsGame);
 
@@ -161,6 +198,12 @@ public class ShaderCompilerCoordinator
 
                     // As Windows PrepareRecording: SCSKiller's copy, with every shader it names by hash read back from the install
                     string store = RecorderManager.RecordingPath(game.Id);
+                    if ((!File.Exists(store) || new FileInfo(store).Length == 0) && !string.Equals(game.Id, game.RawId, StringComparison.Ordinal))
+                    {
+                        string rawStore = RecorderManager.RecordingPath(game.RawId);
+                        if (File.Exists(rawStore) && new FileInfo(rawStore).Length > 0)
+                            store = rawStore;
+                    }
                     string rehydrated = Path.Combine(workingDir, "recording.db");
                     try { File.Delete(recDbPath); } catch { }   // Materialize writes it again from the recording
                     if (File.Exists(store) && new FileInfo(store).Length > 0)
@@ -212,6 +255,69 @@ public class ShaderCompilerCoordinator
             yield break;
         }
 
+        // Save full shaderless.warmed snapshot before incremental DB filtering
+        HashSet<string> allPlannedKeys = new(StringComparer.Ordinal);
+        int unwarmedCount = estimatedTotal;
+        int alreadyWarmedCount = 0;
+        byte[]? fullWarmedSnapshot = null;
+
+        if (hasDb)
+        {
+            fullWarmedSnapshot = RecorderManager.BuildWarmedSnapshot(new[] { recDbPath, genDbPath });
+            var (allKeys, unwarmed, alreadyWarmed) = RecorderManager.FilterDatabasesToUnwarmed(
+                recDbPath,
+                genDbPath,
+                existingWarmedKeys);
+            allPlannedKeys = allKeys;
+            unwarmedCount = unwarmed;
+            alreadyWarmedCount = alreadyWarmed;
+        }
+
+        // Fast-path: if 100% of planned & recorded pipelines are already warmed in the verified on-disk cache
+        if (canIncremental && alreadyWarmedCount > 0 && unwarmedCount == 0)
+        {
+            try
+            {
+                if (File.Exists(genDbPath))
+                    File.Delete(genDbPath);
+            }
+            catch { }
+
+            try { ProtonRunner.FinalizeGameDriverCaches(game); } catch { }
+
+            RecorderManager.SaveWarmedKeys(game, allPlannedKeys, runtimeStamp, prebuiltWarmedSnapshot: fullWarmedSnapshot);
+            _gameManager.SaveGameCompiled(
+                game.Id,
+                allPlannedKeys.Count,
+                currentDriverVersion,
+                currentProtonStamp,
+                currentGameBuildStamp);
+
+            string upToDateMsg = $"Cache ready: 0 new pipelines ({alreadyWarmedCount:N0} already compiled, {FormatBytes(existingBytes)} on disk, cache verified).";
+            yield return new CompilationProgress(
+                GameId: game.Id,
+                GameName: game.Name,
+                ProcessedShaders: alreadyWarmedCount,
+                TotalShaders: alreadyWarmedCount,
+                Percentage: 100.0,
+                CurrentAction: upToDateMsg,
+                IsComplete: true,
+                Failed: false,
+                ErrorMessage: null,
+                FailedShaders: 0,
+                CacheVerified: true
+            );
+            yield break;
+        }
+
+        if (unwarmedCount > 0)
+            estimatedTotal = unwarmedCount;
+
+        bool isIncrementalRun = alreadyWarmedCount > 0;
+        string warmHeader = isIncrementalRun
+            ? $"Warming {unwarmedCount:N0} new pipelines (skipping {alreadyWarmedCount:N0} already compiled) across {threads} CPU threads..."
+            : $"Warming GPU driver pipeline cache via Proton across {threads} CPU threads...";
+
         // Run Proton-powered D3D12/DXR/D3D11 warmer
         yield return new CompilationProgress(
             GameId: game.Id,
@@ -219,7 +325,7 @@ public class ShaderCompilerCoordinator
             ProcessedShaders: 0,
             TotalShaders: estimatedTotal,
             Percentage: 5.0,
-            CurrentAction: $"Warming GPU driver pipeline cache via Proton across {threads} CPU threads...",
+            CurrentAction: warmHeader,
             IsComplete: false,
             Failed: false,
             ErrorMessage: null
@@ -234,7 +340,8 @@ public class ShaderCompilerCoordinator
                     game,
                     workingDir,
                     ev => channel.Writer.TryWrite(ev),
-                    cancellationToken);
+                    cancellationToken,
+                    isIncrementalRun);
                 channel.Writer.Complete();
                 return ok;
             }
@@ -245,7 +352,8 @@ public class ShaderCompilerCoordinator
             }
         }, cancellationToken);
 
-        int done = 0;
+        int processed = 0;
+        int succeeded = 0;
         int currentTotal = estimatedTotal;
         int failed = 0;
         string? lastError = null;
@@ -258,42 +366,67 @@ public class ShaderCompilerCoordinator
                 {
                     if (ev.Total.HasValue && ev.Total.Value > 0)
                         currentTotal = ev.Total.Value;
-                    if (ev.Done.HasValue)
-                        done = ev.Done.Value;
                     if (ev.Failed.HasValue)
                         failed = ev.Failed.Value;
+                    if (ev.Done.HasValue)
+                    {
+                        if (ev.Event == "done")
+                        {
+                            // warmer.cpp "done" event reports doneCount (succeeded), whereas "progress" reports processed (doneCount + failCount)
+                            succeeded = ev.Done.Value;
+                            processed = succeeded + failed;
+                        }
+                        else
+                        {
+                            processed = ev.Done.Value;
+                            succeeded = Math.Max(0, processed - failed);
+                        }
+                    }
                     if (ev.Message != null)
                         lastError = ev.Message;
 
-                    double pct = currentTotal > 0 ? Math.Min(99.0, (double)done / currentTotal * 100.0) : 0;
+                    double pct = currentTotal > 0 ? Math.Min(99.0, (double)processed / currentTotal * 100.0) : 0;
 
+                    string failSuffix = failed > 0 ? $", {failed:N0} failed" : "";
+                    string pipeLabel = isIncrementalRun ? "new pipelines" : "pipelines";
                     string actionMsg = ev.Event switch
                     {
                         "init" => $"Initializing D3D12/D3D11 device across {ev.Threads ?? threads} CPU threads...",
-                        "start" => $"Starting compilation of {currentTotal} game pipeline states...",
-                        "progress" => $"Compiling pipelines into driver cache ({done}/{currentTotal})...",
-                        "done" => $"Completed compilation: {done} succeeded, {failed} failed.",
+                        "start" => $"Starting compilation of {currentTotal:N0} {pipeLabel}...",
+                        "progress" => $"Compiling {pipeLabel} into driver cache ({processed:N0}/{currentTotal:N0}{failSuffix})...",
+                        "done" => $"Completed compilation: {succeeded:N0} compiled{failSuffix}.",
                         "error" => $"Warmer error: {ev.Message}",
-                        _ => $"Compiling pipelines ({done}/{currentTotal})..."
+                        _ => $"Compiling {pipeLabel} ({processed:N0}/{currentTotal:N0}{failSuffix})..."
                     };
 
                     yield return new CompilationProgress(
                         GameId: game.Id,
                         GameName: game.Name,
-                        ProcessedShaders: done,
+                        ProcessedShaders: processed,
                         TotalShaders: currentTotal,
                         Percentage: Math.Round(pct, 1),
                         CurrentAction: actionMsg,
                         IsComplete: false,
                         Failed: ev.Event == "error",
-                        ErrorMessage: ev.Message
+                        ErrorMessage: ev.Message,
+                        FailedShaders: failed
                     );
                 }
             }
         }
         finally
         {
-            // Clean up large materialized scskiller_gen.db after warming finishes, matching Windows ScsKiller.cs
+            if (allPlannedKeys.Count > 0 && (processed > 0 || succeeded > 0))
+            {
+                RecorderManager.SaveWarmedKeys(
+                    game,
+                    allPlannedKeys,
+                    runtimeStamp,
+                    new[] { recDbPath, genDbPath },
+                    fullWarmedSnapshot);
+            }
+
+            // Clean up large materialized shaderless_gen.db after warming finishes, matching Windows ScsKiller.cs
             try
             {
                 if (File.Exists(genDbPath))
@@ -304,14 +437,25 @@ public class ShaderCompilerCoordinator
 
         bool success = await warmerTask;
 
-        // Verify newly compiled cache on disk
+        // Verify newly compiled cache on disk and in the folders the game reads
         var (cacheBytes, cacheFiles, cachePath) = await _driverBackend.GetGameCacheStatsAsync(game.Id, game.Source, game.PrefixPath);
+        var (verifiedOnDisk, verifyDetail) = ProtonRunner.VerifyCacheInstalled(game);
+        bool cacheVerified = verifiedOnDisk && cacheBytes > 0;
 
-        _gameManager.SaveGameCompiled(game.Id, currentTotal > 0 ? currentTotal : done);
+        int totalProcessed = processed > 0 ? processed : currentTotal;
+        int compiledCount = succeeded > 0 ? succeeded : Math.Max(0, totalProcessed - failed);
+        int totalCumulativeCompiled = isIncrementalRun && allPlannedKeys.Count > 0
+            ? allPlannedKeys.Count - failed
+            : (compiledCount > 0 ? compiledCount : totalProcessed);
 
-        string finishMessage = cacheBytes > 0
-            ? $"Pre-compilation finished! Cached {FormatBytes(cacheBytes)} in GPU driver shader cache ({done} pipelines compiled with 0 stutter)."
-            : $"Pre-compilation finished! {done} pipelines compiled into GPU driver cache.";
+        _gameManager.SaveGameCompiled(
+            game.Id,
+            totalCumulativeCompiled,
+            currentDriverVersion,
+            currentProtonStamp,
+            currentGameBuildStamp);
+
+        string finishMessage = FormatCompletionMessage(totalProcessed, failed, cacheBytes, cacheVerified, verifyDetail, alreadyWarmedCount);
 
         yield return new CompilationProgress(
             GameId: game.Id,
@@ -321,9 +465,33 @@ public class ShaderCompilerCoordinator
             Percentage: 100.0,
             CurrentAction: finishMessage,
             IsComplete: true,
-            Failed: !success && done == 0,
-            ErrorMessage: !success && done == 0 ? (lastError ?? "Warmer process exited unexpectedly") : null
+            Failed: !success && processed == 0,
+            ErrorMessage: !success && processed == 0 ? (lastError ?? "Warmer process exited unexpectedly") : null,
+            FailedShaders: failed,
+            CacheVerified: cacheVerified
         );
+    }
+
+    public static string FormatCompletionMessage(int done, int failed, long cacheBytes, bool cacheVerified, string? verifyDetail = null, int previouslyCompiled = 0)
+    {
+        int compiled = Math.Max(0, done - failed);
+        string counts = previouslyCompiled > 0
+            ? (failed > 0
+                ? $"{compiled:N0} new compiled, {failed:N0} failed ({previouslyCompiled + compiled:N0} total)"
+                : $"{compiled:N0} new compiled ({previouslyCompiled + compiled:N0} total)")
+            : (failed > 0
+                ? $"{compiled:N0} compiled, {failed:N0} failed"
+                : $"{compiled:N0} compiled");
+
+        if (cacheVerified)
+        {
+            return cacheBytes > 0
+                ? $"Cache ready: {counts} ({FormatBytes(cacheBytes)} on disk, cache verified)."
+                : $"Cache ready: {counts} (cache verified).";
+        }
+
+        string reason = !string.IsNullOrWhiteSpace(verifyDetail) ? $": {verifyDetail}" : "";
+        return $"Compiled ({counts}), but couldn't confirm cache files in game folder{reason}.";
     }
 
     private static string FormatBytes(long bytes)
@@ -339,3 +507,4 @@ public class ShaderCompilerCoordinator
         return $"{d:0.##} {suffixes[i]}";
     }
 }
+

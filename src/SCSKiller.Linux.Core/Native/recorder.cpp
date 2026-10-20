@@ -319,7 +319,7 @@ static void put(char tag, const void* a, size_t an, const void* b = nullptr, siz
 }
 static void db_flush() {
     if (!fflush(g_db) && !ferror(g_db)) return;
-    logf("db: writing scskiller.db failed (disk full?): nothing more is recorded in this launch");
+    logf("db: writing shaderless.db failed (disk full?): nothing more is recorded in this launch");
     fclose(g_db), g_db = nullptr;
 }
 
@@ -364,14 +364,17 @@ static size_t load_keys(const std::wstring& path) {
     return g_imported.size();
 }
 static void load_db() {
-    g_db = _wfsopen((g_dir + L"scskiller.db").c_str(), L"ab", _SH_DENYWR);
-    if (!g_db) logf("db: scskiller.db is open in another process: nothing is recorded in this one");
-    load_file(g_dir + L"scskiller.db");
-    if (size_t n = load_keys(g_dir + L"scskiller.keys")) logf("db: %zu keys of records and blobs imported earlier or shipped with the game", n);
+    g_db = _wfsopen((g_dir + L"shaderless.db").c_str(), L"ab", _SH_DENYWR);
+    if (!g_db) logf("db: shaderless.db is open in another process: nothing is recorded in this one");
+    load_file(g_dir + L"shaderless.db");
+    size_t n = load_keys(g_dir + L"shaderless.keys");
+    if (!n) n = load_keys(g_dir + L"scskiller.keys");
+    if (n) logf("db: %zu keys of records and blobs imported earlier or shipped with the game", n);
     WIN32_FILE_ATTRIBUTE_DATA fa;
-    if (GetFileAttributesExW((g_dir + L"scskiller.db").c_str(), GetFileExInfoStandard, &fa)) g_db_bytes = (uint64_t)fa.nFileSizeHigh << 32 | fa.nFileSizeLow;
+    if (GetFileAttributesExW((g_dir + L"shaderless.db").c_str(), GetFileExInfoStandard, &fa)) g_db_bytes = (uint64_t)fa.nFileSizeHigh << 32 | fa.nFileSizeLow;
     wchar_t cap[32];
-    GetPrivateProfileStringW(L"scskiller", L"max_db_bytes", L"", cap, 32, (g_dir + L"scskiller.ini").c_str());
+    GetPrivateProfileStringW(L"shaderless", L"max_db_bytes", L"", cap, 32, (g_dir + L"shaderless.ini").c_str());
+    if (!*cap) GetPrivateProfileStringW(L"scskiller", L"max_db_bytes", L"", cap, 32, (g_dir + L"scskiller.ini").c_str());
     g_db_capped = *cap, g_db_cap = wcstoull(cap, nullptr, 10);
     logf("db: %zu PSOs recorded, %zu blobs (mode=record, Linux/Proton)", g_known.size(), g_blobs_on_disk.size());
 }
@@ -548,7 +551,7 @@ static void install_hooks(IUnknown* unk) {
     static std::once_flag once;
     std::call_once(once, [] {
         load_db();
-        g_csv = _wfopen((g_dir + L"scskiller_creates.csv").c_str(), L"a");
+        g_csv = _wfopen((g_dir + L"shaderless_creates.csv").c_str(), L"a");
         if (g_csv) {
             wchar_t p[MAX_PATH];
             GetModuleFileNameW(nullptr, p, MAX_PATH);
@@ -585,13 +588,15 @@ static bool admitted() {
     std::call_once(once, [] {
         const char* why = nullptr;
         wchar_t v[16];
-        GetPrivateProfileStringW(L"scskiller", L"armed", L"", v, 16, (g_dir + L"scskiller.armed").c_str());
+        GetPrivateProfileStringW(L"shaderless", L"armed", L"", v, 16, (g_dir + L"shaderless.armed").c_str());
+        if (wcscmp(v, L"1")) GetPrivateProfileStringW(L"scskiller", L"armed", L"", v, 16, (g_dir + L"shaderless.armed").c_str());
+        if (wcscmp(v, L"1")) GetPrivateProfileStringW(L"scskiller", L"armed", L"", v, 16, (g_dir + L"scskiller.armed").c_str());
         if (wcscmp(v, L"1")) why = "not armed";
         for (auto m : kAntiCheat)
             if (!why && GetFileAttributesW((g_dir + m).c_str()) != INVALID_FILE_ATTRIBUTES) why = "anti-cheat next to the exe";
         for (auto m : {L"EasyAntiCheat_x64.dll", L"EasyAntiCheat_EOS.dll", L"BEClient_x64.dll", L"BEClient.dll"})
             if (!why && GetModuleHandleW(m)) why = "anti-cheat client loaded";
-        if (!why) g_log = _wfopen((g_dir + L"scskiller.log").c_str(), L"a");
+        if (!why) g_log = _wfopen((g_dir + L"shaderless.log").c_str(), L"a");
         g_admission = why ? -1 : 1;
         if (!why) {
             wchar_t p[MAX_PATH];
@@ -700,7 +705,8 @@ BOOL WINAPI DllMain(HINSTANCE self, DWORD reason, LPVOID) {
     if (!g_real) return FALSE;
     // next=<file name>: a mod's d3d12.dll renamed next to us; its exports first
     wchar_t next[64];
-    GetPrivateProfileStringW(L"scskiller", L"next", L"", next, 64, (g_dir + L"scskiller.ini").c_str());
+    GetPrivateProfileStringW(L"shaderless", L"next", L"", next, 64, (g_dir + L"shaderless.ini").c_str());
+    if (!*next) GetPrivateProfileStringW(L"scskiller", L"next", L"", next, 64, (g_dir + L"scskiller.ini").c_str());
     HMODULE mod = nullptr;
     if (*next && !wcspbrk(next, L"\\/:") && !wcsstr(next, L"..")) mod = LoadLibraryW((g_dir + next).c_str());
     if (mod == self || (mod && !GetProcAddress(mod, "D3D12CreateDevice"))) mod = nullptr;

@@ -39,13 +39,22 @@ public class NvidiaBackend : IDriverBackend
         catch { }
 
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string globalCachePath = Path.Combine(home, ".cache", "nvidia", "GLCache");
+        string xdgCache = SCSKiller.Linux.Core.AppPaths.GetXdgCacheHome(home);
+        string globalCachePath = Path.Combine(xdgCache, "nvidia", "GLCache");
         if (!Directory.Exists(globalCachePath))
         {
-            string legacyPath = Path.Combine(home, ".nv", "GLCache");
-            if (Directory.Exists(legacyPath))
+            string fallbackCache = Path.Combine(home, ".cache", "nvidia", "GLCache");
+            if (Directory.Exists(fallbackCache))
             {
-                globalCachePath = legacyPath;
+                globalCachePath = fallbackCache;
+            }
+            else
+            {
+                string legacyPath = Path.Combine(home, ".nv", "GLCache");
+                if (Directory.Exists(legacyPath))
+                {
+                    globalCachePath = legacyPath;
+                }
             }
         }
 
@@ -66,16 +75,15 @@ public class NvidiaBackend : IDriverBackend
             catch { }
         }
 
-        // Measure Steam per-game shader caches
+        // Measure Steam per-game shader caches across Native & Flatpak Steam
         long steamSize = 0;
         int steamFiles = 0;
-        string steamShaderCache = Path.Combine(home, ".local", "share", "Steam", "steamapps", "shadercache");
-        if (Directory.Exists(steamShaderCache))
+        foreach (var steamShaderCache in ProtonRunner.GetAllSteamShaderCacheRoots())
         {
             try
             {
                 var files = Directory.GetFiles(steamShaderCache, "*", SearchOption.AllDirectories);
-                steamFiles = files.Length;
+                steamFiles += files.Length;
                 foreach (var file in files)
                 {
                     steamSize += new FileInfo(file).Length;
@@ -116,43 +124,25 @@ public class NvidiaBackend : IDriverBackend
     {
         return await Task.Run(() =>
         {
-            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string targetPath = source == GameSource.Steam
+                ? ProtonRunner.GetSteamShaderCachePath(gameId, null, prefixPath)
+                : ProtonRunner.GetNonSteamShaderCachePath(gameId, prefixPath);
 
-            if (source == GameSource.Steam)
+            if (Directory.Exists(targetPath))
             {
-                string targetPath = Path.Combine(home, ".local", "share", "Steam", "steamapps", "shadercache", gameId);
-                if (Directory.Exists(targetPath))
+                try
                 {
-                    try
+                    var files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories)
+                        .Where(ProtonRunner.IsCompiledShaderCacheFile)
+                        .ToArray();
+                    long bytes = 0;
+                    foreach (var f in files)
                     {
-                        var files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories);
-                        long bytes = 0;
-                        foreach (var f in files)
-                        {
-                            bytes += new FileInfo(f).Length;
-                        }
-                        return (bytes, files.Length, targetPath);
+                        bytes += new FileInfo(f).Length;
                     }
-                    catch { }
+                    return (bytes, files.Length, targetPath);
                 }
-            }
-            else if (source != GameSource.Steam && !string.IsNullOrEmpty(prefixPath))
-            {
-                string targetPath = Path.Combine(prefixPath, "shadercache", gameId);   // the per-game folder: prefixes can be shared between games
-                if (Directory.Exists(targetPath))
-                {
-                    try
-                    {
-                        var files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories);
-                        long bytes = 0;
-                        foreach (var f in files)
-                        {
-                            bytes += new FileInfo(f).Length;
-                        }
-                        return (bytes, files.Length, targetPath);
-                    }
-                    catch { }
-                }
+                catch { }
             }
 
             return (0L, 0, string.Empty);
@@ -184,25 +174,44 @@ public class NvidiaBackend : IDriverBackend
     {
         await Task.Run(() =>
         {
-            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
             if (source == GameSource.Steam)
             {
-                string targetPath = Path.Combine(home, ".local", "share", "Steam", "steamapps", "shadercache", gameId);
-                if (Directory.Exists(targetPath))
+                string targetPath = ProtonRunner.GetSteamShaderCachePath(gameId, null, prefixPath);
+                if (!string.IsNullOrEmpty(targetPath) && Directory.Exists(targetPath))
                 {
-                    try { Directory.Delete(targetPath, true); } catch { }
+                    string manifest = Path.Combine(targetPath, "installed-files.txt");
+                    if (File.Exists(manifest))
+                    {
+                        foreach (var p in File.ReadAllLines(manifest).Where(l => l.Length > 0))
+                            try { File.Delete(p); } catch { }
+                    }
+                    foreach (var subDir in Directory.GetDirectories(targetPath))
+                    {
+                        string name = Path.GetFileName(subDir);
+                        if (name.StartsWith("fozpipelines", StringComparison.OrdinalIgnoreCase) ||
+                            name.StartsWith("fozmedia", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        try { Directory.Delete(subDir, true); } catch { }
+                    }
+                    foreach (var file in Directory.GetFiles(targetPath))
+                    {
+                        try { File.Delete(file); } catch { }
+                    }
                 }
             }
-            else if (source != GameSource.Steam && !string.IsNullOrEmpty(prefixPath))
+            else
             {
-                ProtonRunner.RemoveInstalledCaches(prefixPath, gameId);
-                string targetPath = Path.Combine(prefixPath, "shadercache", gameId);   // the per-game folder: prefixes can be shared between games
+                string effectivePrefix = !string.IsNullOrEmpty(prefixPath)
+                    ? prefixPath
+                    : Path.Combine(SCSKiller.Linux.Core.AppPaths.DataDir, "prefixes", gameId);
+                ProtonRunner.RemoveInstalledCaches(effectivePrefix, gameId);
+                string targetPath = ProtonRunner.GetNonSteamShaderCachePath(gameId, prefixPath);
                 if (Directory.Exists(targetPath))
                 {
                     try { Directory.Delete(targetPath, true); } catch { }
                 }
             }
+            SCSKiller.Linux.Core.Games.RecorderManager.ClearWarmedKeys(gameId);
         }, cancellationToken);
     }
 
@@ -211,12 +220,10 @@ public class NvidiaBackend : IDriverBackend
         // 1. Clear Global GPU Driver Cache
         await ClearCacheAsync(cancellationToken);
 
-        // 2. Clear All Steam Game Shader Caches
+        // 2. Clear All Steam Game Shader Caches across Native & Flatpak Steam
         await Task.Run(() =>
         {
-            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            string steamShaderCache = Path.Combine(home, ".local", "share", "Steam", "steamapps", "shadercache");
-            if (Directory.Exists(steamShaderCache))
+            foreach (var steamShaderCache in ProtonRunner.GetAllSteamShaderCacheRoots())
             {
                 var dirs = Directory.GetDirectories(steamShaderCache);
                 foreach (var dir in dirs)

@@ -9,5 +9,8 @@ public record CompilationProgress(
     string CurrentAction,
     bool IsComplete,
     bool Failed,
-    string? ErrorMessage
+    string? ErrorMessage,
+    int FailedShaders = 0,
+    bool CacheVerified = false
 );
+

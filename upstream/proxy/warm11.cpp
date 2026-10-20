@@ -129,6 +129,14 @@ static std::string hlsl_type(const Sig& e, int w) {
     return w > 1 ? t + std::to_string(w) : t;
 }
 
+static bool iequal(const std::string& a, const std::string& b) { return _stricmp(a.c_str(), b.c_str()) == 0; }
+
+// Unity GPU-instancing PS inputs carry user semantic "SV_InstanceID" (sv == 0), which fxc rejects on VS outputs;
+// compile it in the partner VS as "SC_..." (stage linkage in DXBC/DXVK is by register oN -> vN).
+static std::string vs_sem(const Sig& e) {
+    return (!e.sv && e.name.size() >= 3 && _strnicmp(e.name.c_str(), "SV_", 3) == 0) ? ("SC_" + e.name.substr(3)) : e.name;
+}
+
 // A VS writing exactly the consumer's inputs (same semantics, registers, components, types). fxc packs VS outputs
 // into the first free space of a register with the same interpolation mode (ints default to constant), in declaration
 // order: so every register is declared in order, in the consumer's mode, and filled up with padding.
@@ -146,32 +154,36 @@ static std::string partner_vs(const Shader& s) {
         uint32_t mode = s.interp[r] < 8 ? s.interp[r] : 0;  // undeclared (unused, or a GS input): ints force constant
         if (!mode) mode = std::any_of(es.begin(), es.end(), [](auto e) { return e->type != 3; }) ? 1 : 2;
         std::string m = modes[mode];
-        auto pad = [&](int w) { f += m + "float" + (w > 1 ? std::to_string(w) : "") + " p" + std::to_string(pads) + ":SCSKPAD" + std::to_string(pads) + ";", ++pads; };
+        auto pad = [&](int w, const Sig* ref) {
+            std::string pt = ref && ref->sv == 0 ? hlsl_type(*ref, w) : ("float" + (w > 1 ? std::to_string(w) : ""));
+            f += m + pt + " p" + std::to_string(pads) + ":SCSKPAD" + std::to_string(pads) + ";", ++pads;
+        };
         int c = 0;
+        const Sig* last = es.empty() ? nullptr : es[0];
         for (auto* e : es) {
             int start = std::countr_zero(e->mask), w = std::popcount(e->mask);
             if (start < c) return {};  // overlapping elements: not a signature fxc produced
-            if (start > c) pad(start - c);
+            if (start > c) pad(start - c, e);
             if (e->sv == SV_POSITION) f += "float4 pos:SV_Position;", pos = true, w = 4 - start;
-            else f += (e->sv ? "" : m) + hlsl_type(*e, w) + " e" + std::to_string(fields++) + ":" + e->name + std::to_string(e->index) + ";";
+            else f += (e->sv ? "" : m) + hlsl_type(*e, w) + " e" + std::to_string(fields++) + ":" + vs_sem(*e) + std::to_string(e->index) + ";";
+            last = e;
             c = start + w;
         }
-        if (c < 4) pad(4 - c);
+        if (c < 4) pad(4 - c, last);
     }
     // only a PS needs a position from it; a HS or GS may already take all 32 registers
     if (!pos && (s.type == 0 || f.empty())) f += "float4 pos:SV_Position;", pos = true;
     return "struct O{" + f + "};O main(uint i:SV_VertexID){O o=(O)0;" + (pos ? "o.pos=float4(i==1?3:-1,i==2?3:-1,0.5,1);" : "") + "return o;}";
 }
 
-static bool iequal(const std::string& a, const std::string& b) { return _stricmp(a.c_str(), b.c_str()) == 0; }
-
 // Every consumer input has its element at the same register, with the components, type and precision.
 static bool lines_up(const std::vector<Sig>& in, const std::vector<Sig>& out) {
     for (auto& e : in) {
         if (!linked(e)) continue;
+        std::string sem = vs_sem(e);
         bool ok = false;
         for (auto& o : out)
-            ok |= o.reg == e.reg && o.index == e.index && iequal(o.name, e.name) && (o.mask & e.mask) == e.mask && o.type == e.type && o.minp == e.minp;
+            ok |= o.reg == e.reg && o.index == e.index && (iequal(o.name, e.name) || iequal(o.name, sem)) && (o.mask & e.mask) == e.mask && o.type == e.type && o.minp == e.minp;
         if (!ok) return false;
     }
     return true;

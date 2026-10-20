@@ -3,7 +3,7 @@
 <h1 align="center">Shaderless</h1>
 
 > **Kill shader compilation stutter in your Proton games on Linux.**
-> Compiles your games' DirectX 12 pipelines into the driver's cache *before* you play.
+> Compiles your games' DirectX 12 pipelines and DirectX 11 shaders into the driver's cache *before* you play.
 
 **Unofficial Linux port of [SCSKiller](https://github.com/BlueHeisenberg/SCSKiller)** (Windows), by the SCSKiller authors.
 Shaderless is not affiliated with or endorsed by the SCSKiller project. Bugs in this port are ours. Please don't report them to SCSKiller.
@@ -18,24 +18,24 @@ Shaderless is not affiliated with or endorsed by the SCSKiller project. Bugs in 
 ## What it does
 
 Modern games (especially Unreal Engine 5) compile shaders while you play. Every new effect or area can freeze the
-game for a moment. Shaderless compiles them ahead of time, through **the same Proton / vkd3d-proton your game
+game for a moment. Shaderless compiles them ahead of time, through **the same Proton / vkd3d-proton / DXVK your game
 uses**, so the game finds them already compiled.
 
 - Finds your games in **Steam**, **Heroic** (Epic games) and **Lutris** (Epic Store games and games in their own folder). See [Library support](#library-support) for what's tested
 - Reads the game's own shader archives using SCSKiller's engine readers (Unreal, Unity, FromSoftware, RE Engine, REDengine, Dagor, Northlight, …)
 - Compiles everything with all CPU cores, inside the game's own Proton prefix and Proton version
-- **⏺ Record mode:** learns exactly what your game asks for while you play, then compiles exactly that
+- **⏺ Record mode (DirectX 12):** learns exactly what your game asks for while you play, then compiles exactly that
 
 ## Library support
 
 | Launcher | Status |
 |---|---|
 | **Steam** | Works. Tested on this port's main test machine. |
-| **Heroic** | **Epic games:** found, compiled in the game's own prefix, and the cache installed where the game reads it (checked with one game, whose settings we read while it ran). That game is Direct3D 11 and did not benefit, see the DirectX 11 note below. A Heroic DirectX 12 game hasn't been tested. **GOG / Amazon:** not supported yet. |
+| **Heroic** | **Epic games:** found, compiled in the game's own prefix, and the cache installed where the game reads it (checked with one game, A Short Hike, where all 2,402 DirectX 11 shaders compile cleanly). Note that 32-bit games use a separate 32-bit NVIDIA driver subfolder, see the DirectX 11 note below. A Heroic 64-bit DirectX 12 game hasn't been tested yet. **GOG / Amazon:** not supported yet. |
 | **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% (one game, see [test results](#test-results-our-own-2-games)). **Games added by their exe** (for example a DRM-free copy): found, compiled, and the cache installed where the game reads it, checked with the game's real settings (one game, Proton-CachyOS; no stutter measurements). **Games from a Lutris installer script:** implemented, not tested. **GOG / other launchers in a Wine prefix:** not found yet. |
-| **Flatpak versions** of Steam, Heroic and Lutris | **Not supported yet.** Shaderless only looks in the normal install folders, so games from a Flatpak install don't show up. |
+| **Flatpak versions** of Steam, Heroic and Lutris | **Works.** Discovers games installed in Flatpak Steam (`~/.var/app/com.valvesoftware.Steam`), Flatpak Heroic (`~/.var/app/com.heroicgameslauncher.hgl`) and Flatpak Lutris (`~/.var/app/net.lutris.Lutris`), compiles them in their own prefix and Proton runtime, and links the compiled cache into each Flatpak app's sandbox cache folder. Tested on all 3 Flatpak launchers (*The Witcher 3*, *A Short Hike*, *End of Abyss*). |
 
-**DirectX 11 games:** Shaderless is built for DirectX 12 games. On Linux, DirectX 11 games run through DXVK, which builds its pipelines when the game draws, so compiling ahead of time has little to prepare. We tested one DirectX 11 game (A Short Hike, through Heroic): the game still wrote its own shader cache at startup, and into a different folder from the one our compile fills. Expect little or no benefit for DirectX 11 games for now.
+**DirectX 11 games:** Supported for **64-bit** DirectX 11 games across all supported engines (Unreal, Unity, FromSoftware, RE Engine, REDengine, Dagor, Northlight, …). Shaderless extracts every DirectX 11 (SM4/SM5 DXBC) shader directly from the game's files (no recording needed) and compiles them through Proton's DXVK into your GPU driver's Vulkan cache. **Known limit for 32-bit (`x86`) games:** our warmer binary (`shaderless_warm.exe`) is 64-bit (`x86_64`), so on NVIDIA it writes into the 64-bit `libnvidia-glcore.so` subfolder inside `GLCache`, whereas a 32-bit game (such as *A Short Hike*) loads 32-bit `libnvidia-glcore.so` and uses a separate 32-bit subfolder inside `GLCache`.
 
 **AMD (Mesa) and Lutris:** the step that installs the compiled cache where a Lutris game reads it is only done for the NVIDIA cache and the vkd3d-proton cache. Mesa's cache isn't handled yet, so AMD users on Lutris may not see the full effect. We have no AMD machine to test on.
 
@@ -47,11 +47,11 @@ If your games don't show up, please [open an issue](../../issues) with the launc
 
 Needs Steam with **Proton** (Heroic / Lutris libraries are partly supported, see [Library support](#library-support)), and WebKitGTK (`webkit2gtk-4.1`) for the window.
 
-Download **`Shaderless-v0.1.2-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
+Download **`Shaderless-v0.2.0-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
 
 ```bash
-tar -xzf Shaderless-v0.1.2-beta-linux-x64.tar.gz
-cd Shaderless-v0.1.2-beta-linux-x64
+tar -xzf Shaderless-v0.2.0-beta-linux-x64.tar.gz
+cd Shaderless-v0.2.0-beta-linux-x64
 ./run-gui.sh          # launch the app
 ./install-desktop.sh  # optional: adds Shaderless (with its icon) to your app menu and desktop
 ```
@@ -65,10 +65,10 @@ git clone https://github.com/cyberps96/Shaderless.git
 cd Shaderless
 ./run-gui.sh          # the app
 ./install-desktop.sh  # optional: adds Shaderless (with its icon) to your app menu and desktop
-./run-cli.sh status   # or the command line: status, list, compile "<game>", compile-all, clear "<game>", clear-all
+./run-cli.sh status   # or the command line: status, list, diagnose, settings, compile "<game>", compile-all, clear "<game>", clear-all
 ```
 
-The two Windows-side helpers (`d3d12.dll` recorder, `scskiller_warm.exe` warmer) are prebuilt in
+The two Windows-side helpers (`d3d12.dll` recorder, `shaderless_warm.exe` warmer) are prebuilt in
 `src/SCSKiller.Linux.Core/Native/`. To rebuild them from source you need mingw-w64, then run `./build-native.sh`.
 
 ## How to use it
@@ -76,9 +76,10 @@ The two Windows-side helpers (`d3d12.dll` recorder, `scskiller_warm.exe` warmer)
 1. Start Shaderless and click **⏺ Record** on your game.
 2. Play for **5–10 minutes** and close the game. The first session still stutters, because that's the session being recorded.
 3. Click **⚡ Compile** / **Re-Compile**.
-4. Play. What you recorded is now smooth. Leave Record on: each session adds anything new, and the next Re-Compile covers it.
+4. Play. What you recorded is now smooth. Leave Record on: each session adds anything new, and the next Re-Compile only compiles the new pipelines (incremental re-compile).
 
-After a GPU driver or game update, just click **Re-Compile**. Your recording is kept.
+- **⚙️ Settings (both OFF by default):** Open **⚙️ Settings** in the header (or run `./run-cli.sh settings`) to optionally turn on **Record all games automatically** (installs the recorder on eligible DX12 games without anti-cheat) and **Compile automatically after a game closes** (watches for recorded games exiting and compiles new pipelines automatically while the app is open).
+- **Stale detection:** After a GPU driver update, Proton update, or game patch, Shaderless marks affected caches as **Stale** so you know when a full **Re-Compile** is needed.
 
 ### Why Record matters more on Linux than on Windows
 
@@ -112,7 +113,7 @@ teaches it the real state, and Shaderless also applies what it learns to shaders
 
 ## If recording doesn't start
 
-After launching the game with Record on, a `scskiller.log` should appear next to the game's real exe. For Unreal games
+After launching the game with Record on, a `shaderless.log` should appear next to the game's real exe. For Unreal games
 that's `<Game>/Binaries/Win64/`, not the top folder. If it doesn't appear, add this to the game's Steam launch options:
 
 ```
@@ -123,7 +124,7 @@ WINEDLLOVERRIDES="d3d12=n,b" %command%
 
 - **The window doesn't open / is blank (Wayland, AMD or NVIDIA):** start it with `./run-gui.sh` (it sets `GDK_BACKEND=x11` and turns off WebKit's DMA-BUF renderer). Don't launch the binary directly.
 - **`webkit2gtk` / `libwebkit2gtk-4.1` not found:** install it (Arch/CachyOS: `webkit2gtk-4.1`, Debian/Ubuntu: `libwebkit2gtk-4.1-0`, Fedora: `webkit2gtk4.1`).
-- **No games listed:** Shaderless reads Steam, Heroic (Epic) and Lutris libraries from their normal install folders. **Flatpak installs of these are not supported yet.** Lutris games that run through a launcher other than the Epic Games Store (for example GOG Galaxy) aren't found yet. Run `./run-cli.sh list` to see what it finds.
+- **No games listed:** Shaderless reads Steam, Heroic (Epic) and Lutris libraries from both native and Flatpak install folders. Lutris games that run through a launcher other than the Epic Games Store (for example GOG Galaxy) aren't found yet. Run `./run-cli.sh diagnose` to print a full diagnostic report (no personal paths) of every launcher path checked and game found.
 - **Which version am I on?** It's shown in the app header, or run `./run-cli.sh --version`. Please include it in bug reports.
 - **Games with anti-cheat:** see [Anti-cheat games](#anti-cheat-games) below.
 
@@ -140,7 +141,7 @@ WINEDLLOVERRIDES="d3d12=n,b" %command%
 
 ## Safety
 
-- **Record mode** adds a few small files next to the game's exe (`d3d12.dll`, `scskiller.ini`, `scskiller.armed`, keys, and the recording and log it produces). It refuses to replace another mod's `d3d12.dll`.
+- **Record mode** adds a few small files next to the game's exe (`d3d12.dll`, `shaderless.ini`, `shaderless.armed`, keys, and the recording and log it produces). It refuses to replace another mod's `d3d12.dll`.
 - It only records **which pipelines the game creates**: no input, no network.
 - Clicking **Recording (on)** again removes the recorder and every file it added.
 - For games **without** anti-cheat, a finished compile also copies a `vkd3d-proton.cache` file next to the game's exe.
@@ -158,10 +159,8 @@ shader cache was written** and how big it is. Check:
 
 ## Differences from SCSKiller (Windows)
 
-Done: game discovery, all engine readers, planning, compile through Proton, Record mode.
-Not yet: automatic recording of all games, automatic compile after a game closes, community recordings, compile queue,
-driver-update detection, and some recorder extras (frame-time logging, recording alongside ReShade/other `d3d12.dll`
-mods, NVAPI state).
+Done: game discovery (native + Flatpak), all engine readers, planning, compile through Proton, Record mode, incremental re-compile, optional automatic recording of all games, optional automatic compile after a game closes, and driver/Proton/game-update stale detection.
+Not yet: community recordings, compile queue, and some recorder extras (frame-time logging, recording alongside ReShade/other `d3d12.dll` mods, NVAPI state).
 
 ## 💜 Support
 
@@ -184,7 +183,7 @@ The core of this tool is SCSKiller's work. Please consider supporting the origin
 ## License
 
 GPL-3.0-or-later, with the additional permission in [LICENSE-EXCEPTION.txt](LICENSE-EXCEPTION.txt), the same as SCSKiller.
-Copyright (C) 2026 The SCSKiller authors; Linux port changes Copyright (C) 2026 the Shaderless contributors.
+Copyright (C) 2026 The SCSKiller authors; Linux port (Shaderless) Copyright (C) 2026 [cyberps96](https://github.com/cyberps96) and the Shaderless contributors.
 This is a modified version of SCSKiller: the Linux app, game sources, Proton integration, warmer and recorder ports live in
 `src/`; the parts of SCSKiller it uses (SCSKiller.Core + one warmer file, with a small Linux patch) are in [`upstream/`](upstream/README.md). Third-party components: [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

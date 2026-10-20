@@ -39,7 +39,9 @@ class Program
         GameManager gameManager = new GameManager();
         bool clientAcknowledged = false;
         var stateLock = new SemaphoreSlim(1, 1);
+        var compileLock = new SemaphoreSlim(1, 1);
         var sendLock = new object();
+        IReadOnlyList<GameInfo> lastKnownGames = Array.Empty<GameInfo>();
 
         void SafeSendWebMessage(string json)
         {
@@ -68,12 +70,15 @@ class Program
 
                 var driver = await driverBackend.GetDriverInfoAsync();
                 var games = await gameManager.ScanAllGamesAsync(driverBackend);
+                lastKnownGames = games;
+                var settings = SCSKiller.Linux.Core.SettingsManager.Load();
 
                 var payload = JsonSerializer.Serialize(new
                 {
                     type = "state",
                     driver,
-                    games
+                    games,
+                    settings
                 }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
                 SafeSendWebMessage(payload);
@@ -87,6 +92,54 @@ class Program
                 stateLock.Release();
             }
         }
+
+        async Task RunGameCompilationAsync(GameInfo game, CancellationToken ct = default)
+        {
+            if (!await compileLock.WaitAsync(0, ct))
+                return;
+
+            try
+            {
+                if (driverBackend == null)
+                    driverBackend = await DriverDetector.DetectActiveBackendAsync(ct);
+
+                var coordinator = new ShaderCompilerCoordinator(gameManager, driverBackend);
+                await foreach (var progress in coordinator.CompileGameShadersAsync(game, ct))
+                {
+                    var pObj = new
+                    {
+                        type = "progress",
+                        gameId = progress.GameId,
+                        gameName = progress.GameName,
+                        processedShaders = progress.ProcessedShaders,
+                        totalShaders = progress.TotalShaders,
+                        percentage = progress.Percentage,
+                        currentAction = progress.CurrentAction,
+                        isComplete = progress.IsComplete,
+                        failed = progress.Failed,
+                        errorMessage = progress.ErrorMessage,
+                        failedShaders = progress.FailedShaders,
+                        cacheVerified = progress.CacheVerified
+                    };
+                    var pJson = JsonSerializer.Serialize(pObj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                    SafeSendWebMessage(pJson);
+                }
+
+                await SendCurrentStateAsync(waitIfBusy: true);
+            }
+            finally
+            {
+                compileLock.Release();
+            }
+        }
+
+        using var exitMonitor = new GameExitMonitor(
+            () => lastKnownGames,
+            async (exitedGame, ct) =>
+            {
+                await RunGameCompilationAsync(exitedGame, ct);
+            });
+        exitMonitor.Start();
 
         window.RegisterWebMessageReceivedHandler((sender, message) =>
         {
@@ -112,6 +165,35 @@ class Program
                     {
                         await SendCurrentStateAsync();
                     }
+                    else if (action == "diagnose")
+                    {
+                        var report = await gameManager.DiagnoseAsync(driverBackend);
+                        var diagJson = JsonSerializer.Serialize(new
+                        {
+                            type = "diagnostics",
+                            report
+                        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+                        SafeSendWebMessage(diagJson);
+                    }
+                    else if (action == "save-settings")
+                    {
+                        var current = SCSKiller.Linux.Core.SettingsManager.Load();
+                        bool autoRecord = doc.RootElement.TryGetProperty("autoRecordAllGames", out var arProp)
+                            ? arProp.GetBoolean()
+                            : current.AutoRecordAllGames;
+                        bool autoCompile = doc.RootElement.TryGetProperty("autoCompileOnExit", out var acProp)
+                            ? acProp.GetBoolean()
+                            : current.AutoCompileOnExit;
+
+                        // If the user explicitly turns AutoRecordAllGames on, clear previous opt-outs only if requested, or preserve per-game opt-outs
+                        var updated = current with
+                        {
+                            AutoRecordAllGames = autoRecord,
+                            AutoCompileOnExit = autoCompile
+                        };
+                        SCSKiller.Linux.Core.SettingsManager.Save(updated);
+                        await SendCurrentStateAsync(waitIfBusy: true);
+                    }
                     else if (action == "compile")
                     {
                         string gameId = doc.RootElement.GetProperty("gameId").GetString()!;
@@ -122,63 +204,24 @@ class Program
                             currentAction = "Starting...", isComplete = false, failed = false, errorMessage = (string?)null
                         }));
                         var games = await gameManager.ScanAllGamesAsync(driverBackend);
+                        lastKnownGames = games;
                         var game = games.FirstOrDefault(g => g.Id == gameId);
 
                         if (game != null)
                         {
-                            var coordinator = new ShaderCompilerCoordinator(gameManager, driverBackend);
-                            await foreach (var progress in coordinator.CompileGameShadersAsync(game))
-                            {
-                                var pObj = new
-                                {
-                                    type = "progress",
-                                    gameId = progress.GameId,
-                                    gameName = progress.GameName,
-                                    processedShaders = progress.ProcessedShaders,
-                                    totalShaders = progress.TotalShaders,
-                                    percentage = progress.Percentage,
-                                    currentAction = progress.CurrentAction,
-                                    isComplete = progress.IsComplete,
-                                    failed = progress.Failed,
-                                    errorMessage = progress.ErrorMessage
-                                };
-                                var pJson = JsonSerializer.Serialize(pObj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-                                SafeSendWebMessage(pJson);
-                            }
-
-                            // Refresh driver cache stats
-                            await SendCurrentStateAsync(waitIfBusy: true);
+                            await RunGameCompilationAsync(game);
                         }
                     }
                     else if (action == "compile-all")
                     {
                         var games = await gameManager.ScanAllGamesAsync(driverBackend);
+                        lastKnownGames = games;
                         var uncompiled = games.Where(g => g.State != CacheState.Cached).ToList();
 
-                        var coordinator = new ShaderCompilerCoordinator(gameManager, driverBackend);
                         foreach (var game in uncompiled)
                         {
-                            await foreach (var progress in coordinator.CompileGameShadersAsync(game))
-                            {
-                                var pObj = new
-                                {
-                                    type = "progress",
-                                    gameId = progress.GameId,
-                                    gameName = progress.GameName,
-                                    processedShaders = progress.ProcessedShaders,
-                                    totalShaders = progress.TotalShaders,
-                                    percentage = progress.Percentage,
-                                    currentAction = progress.CurrentAction,
-                                    isComplete = progress.IsComplete,
-                                    failed = progress.Failed,
-                                    errorMessage = progress.ErrorMessage
-                                };
-                                var pJson = JsonSerializer.Serialize(pObj, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-                                SafeSendWebMessage(pJson);
-                            }
+                            await RunGameCompilationAsync(game);
                         }
-
-                        await SendCurrentStateAsync(waitIfBusy: true);
                     }
                     else if (action == "clear-game")
                     {
@@ -206,8 +249,16 @@ class Program
                             string? error = null;
                             try
                             {
-                                if (game.RecorderInstalled) RecorderManager.Uninstall(game);
-                                else RecorderManager.Install(game);
+                                if (game.RecorderInstalled)
+                                {
+                                    RecorderManager.Uninstall(game);
+                                    SCSKiller.Linux.Core.SettingsManager.SetGameAutoRecordOptOut(game.Id, optOut: true);
+                                }
+                                else
+                                {
+                                    RecorderManager.Install(game);
+                                    SCSKiller.Linux.Core.SettingsManager.SetGameAutoRecordOptOut(game.Id, optOut: false);
+                                }
                             }
                             catch (Exception ex) { error = ex.Message; }
                             if (error != null)

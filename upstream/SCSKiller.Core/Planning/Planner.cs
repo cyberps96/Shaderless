@@ -1,4 +1,4 @@
-﻿using System.IO.Compression;
+using System.IO.Compression;
 using System.Numerics;
 using System.Text.Json;
 using SCSKiller.Core.Carved;
@@ -55,7 +55,7 @@ public sealed class Planner(string? packDir = null, string? sharedPackDir = null
     /// shader, whatever the state or the other stages (measured on NVIDIA, proxy/probe11.cpp): a staged warm
     /// that creates and draws/dispatches each shader once fills it. ponytail: measured for "nvidia-1" only; becomes the
     /// proposed VendorCaps.D3D11CacheKeyedByExeName once that's in the contract.</summary>
-    internal static bool D3D11Cache(VendorCaps caps) => caps.Profile == "nvidia-1";
+    internal static bool D3D11Cache(VendorCaps caps) => caps.PerStageCache || caps.Profile == "nvidia-1";
 
     /// <summary>The vendor's driver caches a ray tracing collection on its own, so a collection compiled by the warm makes
     /// the game's pipelines linking it cheap (NVIDIA, selftest dxr: per-shader collections cached across processes,
@@ -158,10 +158,10 @@ public sealed class Planner(string? packDir = null, string? sharedPackDir = null
     public void Materialize(Plan plan, Game game, EngineInfo engine, IEngineReader reader, Recording? recording, string workDir, CancellationToken ct)
     {
         Directory.CreateDirectory(workDir);
-        var mainDb = Path.Combine(workDir, "scskiller.db");
+        var mainDb = Path.Combine(workDir, "shaderless.db");
         if (recording != null) CopyRaw(recording.DbPath, mainDb);
         else File.WriteAllBytes(mainDb, []);
-        var inMain = new HashSet<string>(); // blob hashes and PSO keys already in scskiller.db
+        var inMain = new HashSet<string>(); // blob hashes and PSO keys already in shaderless.db
         foreach (var r in Read(mainDb)) inMain.Add(r.Tag == 'B' ? Hex(r.Payload.AsSpan(0, 20)) : r.Key);
 
         var body = PlanFile.Read(plan.FilePath).Records.ToList();
@@ -181,7 +181,7 @@ public sealed class Planner(string? packDir = null, string? sharedPackDir = null
         shaders.Remove(Zero);
 
         // blobs first, then templates, then items: the proxy resolves items against templates as it loads
-        using var gen = new BufferedStream(File.Create(Path.Combine(workDir, "scskiller_gen.db")), 1 << 20);
+        using var gen = new BufferedStream(File.Create(Path.Combine(workDir, "shaderless_gen.db")), 1 << 20);
         var planBlobs = body.Where(r => r.Tag == 'B').Select(r => Hex(r.Payload.AsSpan(0, 20))).ToHashSet();
         var written = new HashSet<string>(inMain);
         foreach (var r in body.Where(r => r.Tag == 'B' && !inMain.Contains(Hex(r.Payload.AsSpan(0, 20))))) { Write(gen, 'B', r.Payload); written.Add(Hex(r.Payload.AsSpan(0, 20))); }

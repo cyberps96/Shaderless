@@ -235,6 +235,144 @@ public static class UiAssets
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    /* Diagnostics Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(1, 4, 9, 0.78);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 920px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 { font-size: 16px; font-weight: 700; }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      font-size: 13px;
+    }
+    .diag-source-block {
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px;
+      background: #0d1117;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .diag-source-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .diag-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-left: 8px;
+    }
+    .diag-item {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-muted);
+      word-break: break-all;
+    }
+    .diag-item strong { color: var(--text-main); }
+    .tag-found { color: #3fb950; font-weight: 700; }
+    .tag-missing { color: #8b949e; }
+    .tag-skipped { color: #d29922; font-weight: 600; }
+    .status-stale {
+      background: rgba(210, 153, 34, 0.16);
+      color: #e3b341;
+      border: 1px solid rgba(210, 153, 34, 0.45);
+    }
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .setting-info h3 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+      color: var(--text-main);
+    }
+    .setting-info p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 46px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: #30363d;
+      border: 1px solid var(--border);
+      transition: .2s;
+      border-radius: 24px;
+    }
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background-color: #c9d1d9;
+      transition: .2s;
+      border-radius: 50%;
+    }
+    .toggle-switch input:checked + .toggle-slider {
+      background-color: rgba(63, 185, 80, 0.35);
+      border-color: #3fb950;
+    }
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(22px);
+      background-color: #3fb950;
+    }
   </style>
 </head>
 <body>
@@ -254,6 +392,8 @@ public static class UiAssets
 
     <div class="header-actions">
       <button class="btn-secondary" id="btn-rescan" onclick="scanGames()">🔄 Rescan</button>
+      <button class="btn-secondary" id="btn-diagnose" onclick="openDiagnose()" title="Inspect all checked library paths, discovered games, and skipped manifests">🩺 Diagnose</button>
+      <button class="btn-secondary" id="btn-settings" onclick="openSettings()" title="Configure automation options (all off by default)">⚙️ Settings</button>
       <button class="btn-primary" onclick="compileAll()">⚡ Pre-Compile All</button>
       <button class="btn-danger" onclick="clearCache()" title="Purge ALL compiled shaders from GPU driver and Steam game caches">🗑️ Clear All Caches</button>
     </div>
@@ -273,8 +413,60 @@ public static class UiAssets
     </div>
   </main>
 
+  <div class="modal-backdrop" id="diag-modal" onclick="if(event.target === this) closeDiagnose()">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>🩺 Library Discovery Diagnostics (Native, XDG & Flatpak)</h2>
+        <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="closeDiagnose()">✕ Close</button>
+      </div>
+      <div class="modal-body" id="diag-body">
+        <div style="color: var(--text-muted); display: flex; align-items: center; gap: 10px;">
+          <div class="spinner"></div>
+          <span>Inspecting launcher directories and manifests...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="settings-modal" onclick="if(event.target === this) closeSettings()">
+    <div class="modal-box" style="max-width: 620px;">
+      <div class="modal-header">
+        <h2>⚙️ Settings ("Set and Forget")</h2>
+        <button class="btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="closeSettings()">✕ Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-row">
+          <div class="setting-info">
+            <h3>Record all games automatically <span style="font-size: 11px; color: var(--text-muted); font-weight: 400;">(Default: OFF)</span></h3>
+            <p>Automatically install the pipeline recorder on eligible games when scanning so you don't need to click Record on each one. Games with anti-cheat are always excluded, and you can still toggle Record per game.</p>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-auto-record" onchange="saveSettings()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <h3>Compile automatically after the game closes <span style="font-size: 11px; color: var(--text-muted); font-weight: 400;">(Default: OFF)</span></h3>
+            <p>Watch for a running game to close, import newly recorded pipelines from your session, and run a fast incremental compile in the background when no other game is open.</p>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="chk-auto-compile" onchange="saveSettings()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div style="font-size: 11px; color: var(--text-muted); padding: 4px 2px;">
+          Saved in <code>~/.local/share/shaderless/settings.json</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     let currentGames = [];
+    let currentSettings = { autoRecordAllGames: false, autoCompileOnExit: false };
 
     function post(data) {
       if (window.external && window.external.sendMessage) {
@@ -286,6 +478,39 @@ public static class UiAssets
       const btn = document.getElementById('btn-rescan');
       if (btn) btn.innerText = '🔄 Scanning...';
       post({ action: 'scan' });
+    }
+
+    function openDiagnose() {
+      const modal = document.getElementById('diag-modal');
+      const body = document.getElementById('diag-body');
+      modal.style.display = 'flex';
+      body.innerHTML = '<div style="color: var(--text-muted); display: flex; align-items: center; gap: 10px;"><div class="spinner"></div><span>Inspecting launcher directories and manifests...</span></div>';
+      post({ action: 'diagnose' });
+    }
+
+    function closeDiagnose() {
+      document.getElementById('diag-modal').style.display = 'none';
+    }
+
+    function openSettings() {
+      document.getElementById('chk-auto-record').checked = !!currentSettings.autoRecordAllGames;
+      document.getElementById('chk-auto-compile').checked = !!currentSettings.autoCompileOnExit;
+      document.getElementById('settings-modal').style.display = 'flex';
+    }
+
+    function closeSettings() {
+      document.getElementById('settings-modal').style.display = 'none';
+    }
+
+    function saveSettings() {
+      const autoRecord = document.getElementById('chk-auto-record').checked;
+      const autoCompile = document.getElementById('chk-auto-compile').checked;
+      currentSettings = { autoRecordAllGames: autoRecord, autoCompileOnExit: autoCompile };
+      post({
+        action: 'save-settings',
+        autoRecordAllGames: autoRecord,
+        autoCompileOnExit: autoCompile
+      });
     }
 
     function compileGame(id) {
@@ -303,12 +528,14 @@ public static class UiAssets
 
     function clearCache() {
       if (confirm('Purge ALL compiled shaders from GPU driver and Steam game caches?\n\nThis will reset cache for all games to 0 B.')) {
+        for (const k of Object.keys(recentProgress)) delete recentProgress[k];
         post({ action: 'clear-all' });
       }
     }
 
     function clearGameCache(id, name) {
       if (confirm(`Delete on-disk shader cache for "${name}"?\n\nThis will reset the game's shader status to Needs Pre-Compilation (0 B).`)) {
+        delete recentProgress[id];
         post({ action: 'clear-game', gameId: id });
       }
     }
@@ -330,6 +557,8 @@ public static class UiAssets
           post({ action: 'ack' });
         } else if (msg.type === 'progress') {
           updateProgress(msg);
+        } else if (msg.type === 'diagnostics') {
+          renderDiagnostics(msg.report);
         } else if (msg.type === 'error') {
           alert(msg.message);
         }
@@ -338,9 +567,72 @@ public static class UiAssets
       }
     }
 
+    function renderDiagnostics(report) {
+      const body = document.getElementById('diag-body');
+      if (!report) {
+        body.innerHTML = '<div style="color: var(--red);">Failed to load diagnostics report.</div>';
+        return;
+      }
+
+      const sourceNames = ['Steam', 'Heroic', 'Lutris', 'Bottles', 'Manual'];
+      const sourcesHtml = (report.sources || []).map(src => {
+        const sName = typeof src.source === 'number' ? (sourceNames[src.source] || 'Launcher') : src.source;
+        const pathsHtml = (src.checkedPaths || []).map(p => `
+          <div class="diag-item">
+            <span class="${p.exists ? 'tag-found' : 'tag-missing'}">${p.exists ? '[FOUND]' : '[MISSING]'}</span>
+            <strong>${p.description}:</strong> <code>${p.path}</code>
+          </div>
+        `).join('') || '<div class="diag-item">(none)</div>';
+
+        const gamesHtml = (src.discoveredGames || []).map(g => `
+          <div class="diag-item">
+            <span class="tag-found">+ ${g.name}</span>
+            <span>[ID: <code>${g.id}</code>${g.isFlatpak ? ' • Flatpak' : ''} • Engine: ${getEngineName(g.engine)} • Cache: ${formatBytes(g.cacheSizeBytes)}]</span><br/>
+            <span>Install: <code>${g.installPath}</code> | Exe: <code>${g.executablePath}</code></span>
+          </div>
+        `).join('') || '<div class="diag-item">(none discovered)</div>';
+
+        const skippedHtml = (src.skippedItems || []).map(s => `
+          <div class="diag-item">
+            <span class="tag-skipped">- ${s.nameOrId}${s.isFlatpak ? ' [Flatpak]' : ''}:</span> ${s.reason}
+            <span style="opacity:0.75;">(<code>${s.path}</code>)</span>
+          </div>
+        `).join('') || '<div class="diag-item">(none skipped)</div>';
+
+        return `
+          <div class="diag-source-block">
+            <div class="diag-source-title">${sName}</div>
+            ${src.error ? `<div style="color: var(--red); font-size: 12px;">Error: ${src.error}</div>` : ''}
+            <div><strong>Checked Paths (${(src.checkedPaths || []).length}):</strong></div>
+            <div class="diag-list">${pathsHtml}</div>
+            <div><strong>Discovered Games (${(src.discoveredGames || []).length}):</strong></div>
+            <div class="diag-list">${gamesHtml}</div>
+            <div><strong>Skipped Entries (${(src.skippedItems || []).length}):</strong></div>
+            <div class="diag-list">${skippedHtml}</div>
+          </div>
+        `;
+      }).join('');
+
+      body.innerHTML = `
+        <div class="diag-source-block">
+          <div><strong>Active GPU Driver:</strong> ${report.activeDriverSummary || 'Unknown'}</div>
+          <div><strong>Default Proton Runtime:</strong> <code>${report.defaultProtonBinary || 'Not found'}</code></div>
+        </div>
+        ${sourcesHtml}
+      `;
+    }
+
     function updateState(state) {
       const btn = document.getElementById('btn-rescan');
       if (btn) btn.innerText = '🔄 Rescan';
+
+      if (state.settings) {
+        currentSettings = state.settings;
+        const chkRec = document.getElementById('chk-auto-record');
+        const chkComp = document.getElementById('chk-auto-compile');
+        if (chkRec) chkRec.checked = !!currentSettings.autoRecordAllGames;
+        if (chkComp) chkComp.checked = !!currentSettings.autoCompileOnExit;
+      }
 
       if (state.driver) {
         const d = state.driver;
@@ -360,10 +652,9 @@ public static class UiAssets
       }
     }
 
-    function updateProgress(p) {
-      const card = document.getElementById(`game-${p.gameId}`);
-      if (!card) return;
+    const recentProgress = {};
 
+    function applyProgressToCard(card, p) {
       const pBox = card.querySelector('.progress-box');
       const pFill = card.querySelector('.progress-fill');
       const pText = card.querySelector('.progress-text');
@@ -372,19 +663,36 @@ public static class UiAssets
 
       pBox.style.display = 'flex';
       pFill.style.width = `${p.percentage}%`;
-      pText.innerHTML = `<span>${p.currentAction}</span><span>${p.percentage}%</span>`;
+      const actionColor = p.failed ? 'color: #f85149;' : (p.isComplete ? (p.cacheVerified === false ? 'color: #d29922;' : 'color: #3fb950;') : '');
+      const rightLabel = p.isComplete ? (p.failed ? '✗ Failed' : '✓ Done') : `${p.percentage}%`;
+      pText.innerHTML = `<span style="${actionColor}">${p.currentAction}</span><span style="${actionColor}">${rightLabel}</span>`;
 
       if (p.isComplete) {
-        pStatus.className = 'status-pill status-cached';
-        pStatus.innerText = 'Cached (Ready)';
-        btn.innerText = '⚡ Re-Compile';
         btn.disabled = false;
-        setTimeout(() => { pBox.style.display = 'none'; }, 3000);
+        if (p.failed) {
+          pStatus.className = 'status-pill status-uncompiled';
+          pStatus.innerText = 'Action Needed';
+        } else if (p.cacheVerified === false) {
+          pStatus.className = 'status-pill status-uncompiled';
+          pStatus.innerText = "Couldn't Confirm";
+          btn.innerText = '⚡ Re-Compile';
+        } else {
+          pStatus.className = 'status-pill status-cached';
+          pStatus.innerText = 'Cache Installed';
+          btn.innerText = '⚡ Re-Compile';
+        }
       } else {
         pStatus.className = 'status-pill status-compiling';
         pStatus.innerText = 'Compiling...';
         btn.disabled = true;
       }
+    }
+
+    function updateProgress(p) {
+      recentProgress[p.gameId] = p;
+      const card = document.getElementById(`game-${p.gameId}`);
+      if (!card) return;
+      applyProgressToCard(card, p);
     }
 
     function getEngineName(code) {
@@ -395,18 +703,23 @@ public static class UiAssets
     function renderGames() {
       const grid = document.getElementById('game-grid');
       if (!currentGames || currentGames.length === 0) {
-        grid.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">No games detected in Steam, Heroic, or Lutris libraries.</div>';
+        grid.innerHTML = '<div style="color: var(--text-muted); padding: 20px;">No games detected in Steam, Heroic, or Lutris libraries. Click <strong>🩺 Diagnose</strong> above to inspect library paths.</div>';
         return;
       }
 
       grid.innerHTML = currentGames.map(g => {
         const isCached = g.state === 1 || g.state === 'Cached';
-        const statusClass = isCached ? 'status-cached' : 'status-uncompiled';
-        const statusLabel = isCached ? 'Cached (Ready)' : 'Needs Pre-Compilation';
+        const isStale = g.state === 2 || g.state === 'Outdated';
+        const statusClass = isCached ? 'status-cached' : (isStale ? 'status-stale' : 'status-uncompiled');
+        const statusLabel = isCached
+          ? (g.newRecordedPsos > 0 ? `Cached (+${g.newRecordedPsos.toLocaleString()} new)` : 'Cached (Ready)')
+          : (isStale ? (g.staleReason ? `Stale (${g.staleReason})` : 'Stale') : 'Needs Pre-Compilation');
         const sourceBadge = g.source === 0 || g.source === 'Steam' ? 'badge-steam' : (g.source === 1 || g.source === 'Heroic' ? 'badge-heroic' : 'badge-lutris');
-        const sourceName = g.source === 0 || g.source === 'Steam' ? 'Steam' : (g.source === 1 || g.source === 'Heroic' ? 'Heroic' : 'Lutris');
+        const baseSourceName = g.source === 0 || g.source === 'Steam' ? 'Steam' : (g.source === 1 || g.source === 'Heroic' ? 'Heroic' : 'Lutris');
+        const sourceName = g.isFlatpak ? `${baseSourceName} (Flatpak)` : baseSourceName;
         const engineLabel = getEngineName(g.engine);
         const cacheSizeLabel = formatBytes(g.cacheSizeBytes);
+        const newRecBadge = g.newRecordedPsos > 0 ? ` <span style="color: #d29922;">(+${g.newRecordedPsos.toLocaleString()} new)</span>` : '';
 
         return `
           <div class="game-card" id="game-${g.id}">
@@ -433,7 +746,7 @@ public static class UiAssets
 
             <div class="meta-row">
               <span>Recorded Pipelines:</span>
-              <strong style="${g.recordedPsos > 0 ? 'color: #bc8cff;' : ''}">${(g.recordedPsos || 0).toLocaleString()}${g.recorderInstalled ? ' • recording' : ''}</strong>
+              <strong style="${g.recordedPsos > 0 ? 'color: #bc8cff;' : ''}">${(g.recordedPsos || 0).toLocaleString()}${newRecBadge}${g.recorderInstalled ? ' • recording' : ''}</strong>
             </div>
 
             <div class="progress-box">
@@ -450,12 +763,17 @@ public static class UiAssets
                 ${g.recorderInstalled ? '⏺ Recording (on)' : '⏺ Record'}
               </button>
               <button class="btn-primary" onclick="compileGame('${g.id}')">
-                ${isCached ? '⚡ Re-Compile' : '⚡ Kill Stutter'}
+                ${(isCached || isStale) ? '⚡ Re-Compile' : '⚡ Kill Stutter'}
               </button>
             </div>
           </div>
         `;
       }).join('');
+
+      for (const id of Object.keys(recentProgress)) {
+        const card = document.getElementById(`game-${id}`);
+        if (card) applyProgressToCard(card, recentProgress[id]);
+      }
     }
 
     // Set up bidirectional bridge

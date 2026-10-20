@@ -10,15 +10,15 @@ namespace SCSKiller.Core.App;
 /// its scskiller.ini.</summary>
 public static class Recordings
 {
-    public const string KeysFile = "scskiller.keys";
-    public const string WarmedFile = "scskiller.warmed";
+    public const string KeysFile = "shaderless.keys";
+    public const string WarmedFile = "shaderless.warmed";
 
     /// <summary>The files the app writes next to the recorder, with the temp names their writes go through.</summary>
     public static readonly string[] AppFiles = [KeysFile, WarmedFile, KeysFile + ".tmp", WarmedFile + ".tmp"];
 
     /// <summary>Written by each warm process next to its log (proxy.cpp warm_main): the record keys ('P' records' for plan
     /// items) of the items it didn't create: failed, abandoned, or skipped for having removed the device before.</summary>
-    public const string FailedFile = "scskiller_failed.keys";
+    public const string FailedFile = "shaderless_failed.keys";
 
     // proxy.cpp load_warmed: magic, u32 n, n record keys, then tuple hashes
     static ReadOnlySpan<byte> WarmedMagic => "SCSKWRM1"u8;

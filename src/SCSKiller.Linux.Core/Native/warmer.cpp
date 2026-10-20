@@ -788,8 +788,8 @@ int wmain(int argc, wchar_t** argv) {
         }
     };
 
-    loadDbMapped(workDir + L"/scskiller.db");
-    loadDbMapped(workDir + L"/scskiller_gen.db");
+    loadDbMapped(workDir + L"/shaderless.db");
+    loadDbMapped(workDir + L"/shaderless_gen.db");
 
     size_t n12 = recs.size() + planItems.size();
     size_t total = n12 + items11.size();
