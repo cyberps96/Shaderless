@@ -9,7 +9,11 @@ public static class ProcessMemory
 {
     /// <summary>Hands the working set back to Windows (the pages stay committed and come back on use): the window is hidden
     /// or minimized. Measured on the idle app: 210 MB to 11 MB, 16 MB again 15 s later.</summary>
-    public static void Trim() => SetProcessWorkingSetSize(GetCurrentProcess(), -1, -1);
+    public static void Trim()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        SetProcessWorkingSetSize(GetCurrentProcess(), -1, -1);
+    }
 
     /// <summary>The log file <see cref="Line"/> goes to in the data folder, on request (`SCSKiller.exe --memory`).</summary>
     public const string LogFile = "memory.log";

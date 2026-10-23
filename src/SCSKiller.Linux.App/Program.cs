@@ -28,6 +28,8 @@ class Program
 
         var window = new PhotinoWindow()
             .SetTitle($"Shaderless v{SCSKiller.Linux.Core.AppPaths.Version} — shader stutter killer for Linux (unofficial SCSKiller port)")
+            .SetUseOsDefaultSize(false)
+            .SetMinSize(900, 600)
             .SetSize(1150, 750)
             .Center()
             .SetResizable(true);

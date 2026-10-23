@@ -135,12 +135,22 @@ public static class KeyFiles
     /// can't be opened; a part the file system doesn't give is left empty.</summary>
     public static string Identity(string path)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                var fi = new FileInfo(path);
+                return fi.Exists ? $"{fi.LastWriteTimeUtc.Ticks}/" : "";
+            }
+            catch { return ""; }
+        }
         using var h = CreateFileW(path, 0x80 /* FILE_READ_ATTRIBUTES: no sharing conflict */, 7, 0, 3 /* OPEN_EXISTING */, 0, 0);
         return h.IsInvalid ? "" : Identity(h);
     }
 
     static string Identity(Microsoft.Win32.SafeHandles.SafeFileHandle h)
     {
+        if (!OperatingSystem.IsWindows()) return "/";
         var changed = GetFileInformationByHandleEx(h, 0 /* FileBasicInfo */, out BasicInfo b, Marshal.SizeOf<BasicInfo>()) ? b.Changed.ToString() : "";
         var id = GetFileInformationByHandleEx(h, 18 /* FileIdInfo */, out IdInfo i, Marshal.SizeOf<IdInfo>()) ? $"{i.Volume:x}-{i.High:x16}{i.Low:x16}" : "";
         return $"{changed}/{id}";

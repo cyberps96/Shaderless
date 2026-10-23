@@ -292,6 +292,15 @@ public static class GameFiles
     /// it; null when it can't be opened.</summary>
     public static string? FinalPath(string dir)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                if (!Directory.Exists(dir) && !File.Exists(dir)) return null;
+                return File.ResolveLinkTarget(dir, returnFinalTarget: true)?.FullName ?? Path.GetFullPath(dir);
+            }
+            catch { return null; }
+        }
         using var h = CreateFileW(dir, 0, 7 /* FILE_SHARE_READ | WRITE | DELETE */, 0, 3 /* OPEN_EXISTING */, 0x02000000 /* FILE_FLAG_BACKUP_SEMANTICS */, 0);
         return h.IsInvalid ? null : FinalPath(h);
     }
@@ -301,6 +310,11 @@ public static class GameFiles
     /// be opened. As the proxy reads its exe's (proxy.cpp ledger_path).</summary>
     public static (byte[]? Id, string? Final)? Identity(string path)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            var final = FinalPath(path);
+            return final == null ? null : (null, final);
+        }
         using var h = CreateFileW(path, 0x80 /* FILE_READ_ATTRIBUTES */, 7, 0, 3, 0x02000000, 0);
         if (h.IsInvalid) return null;
         var id = new byte[24];

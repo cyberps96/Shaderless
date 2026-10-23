@@ -32,7 +32,7 @@ uses**, so the game finds them already compiled.
 |---|---|
 | **Steam** | Works. Tested on this port's main test machine. |
 | **Heroic** | **Epic games:** found, compiled in the game's own prefix, and the cache installed where the game reads it (checked with one game, A Short Hike, where all 2,402 DirectX 11 shaders compile cleanly). Note that 32-bit games use a separate 32-bit NVIDIA driver subfolder, see the DirectX 11 note below. A Heroic 64-bit DirectX 12 game hasn't been tested yet. **GOG / Amazon:** not supported yet. |
-| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% (one game, see [test results](#test-results-our-own-2-games)). **Games added by their exe** (for example a DRM-free copy): found, compiled, and the cache installed where the game reads it, checked with the game's real settings (one game, Proton-CachyOS; no stutter measurements). **Games from a Lutris installer script:** implemented, not tested. **GOG / other launchers in a Wine prefix:** not found yet. |
+| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% (one game, see [test results](#test-results-our-own-3-games)). **Games added by their exe** (for example a DRM-free copy): found, compiled, and the cache installed where the game reads it, checked with the game's real settings (one game, Proton-CachyOS; no stutter measurements). **Games from a Lutris installer script:** implemented, not tested. **GOG / other launchers in a Wine prefix:** not found yet. |
 | **Flatpak versions** of Steam, Heroic and Lutris | **Works.** Discovers games installed in Flatpak Steam (`~/.var/app/com.valvesoftware.Steam`), Flatpak Heroic (`~/.var/app/com.heroicgameslauncher.hgl`) and Flatpak Lutris (`~/.var/app/net.lutris.Lutris`), compiles them in their own prefix and Proton runtime, and links the compiled cache into each Flatpak app's sandbox cache folder. Tested on all 3 Flatpak launchers (*The Witcher 3*, *A Short Hike*, *End of Abyss*). |
 
 **DirectX 11 games:** Supported for **64-bit** DirectX 11 games across all supported engines (Unreal, Unity, FromSoftware, RE Engine, REDengine, Dagor, Northlight, …). Shaderless extracts every DirectX 11 (SM4/SM5 DXBC) shader directly from the game's files (no recording needed) and compiles them through Proton's DXVK into your GPU driver's Vulkan cache. **Known limit for 32-bit (`x86`) games:** our warmer binary (`shaderless_warm.exe`) is 64-bit (`x86_64`), so on NVIDIA it writes into the 64-bit `libnvidia-glcore.so` subfolder inside `GLCache`, whereas a 32-bit game (such as *A Short Hike*) loads 32-bit `libnvidia-glcore.so` and uses a separate 32-bit subfolder inside `GLCache`.
@@ -47,11 +47,11 @@ If your games don't show up, please [open an issue](../../issues) with the launc
 
 Needs Steam with **Proton** (Heroic / Lutris libraries are partly supported, see [Library support](#library-support)), and WebKitGTK (`webkit2gtk-4.1`) for the window.
 
-Download **`Shaderless-v0.2.0-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
+Download **`Shaderless-v0.2.1-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
 
 ```bash
-tar -xzf Shaderless-v0.2.0-beta-linux-x64.tar.gz
-cd Shaderless-v0.2.0-beta-linux-x64
+tar -xzf Shaderless-v0.2.1-beta-linux-x64.tar.gz
+cd Shaderless-v0.2.1-beta-linux-x64
 ./run-gui.sh          # launch the app
 ./install-desktop.sh  # optional: adds Shaderless (with its icon) to your app menu and desktop
 ```
@@ -91,13 +91,15 @@ teaches it the real state, and Shaderless also applies what it learns to shaders
 > **Known limit:** areas you've never visited can still hitch the first time (on Valor Mortis it was short, about one
 > burst while new content streamed in). Keep Record on and Re-Compile, and they get covered.
 
-## Test results (our own, 2 games)
+## Test results (our own, 3 games)
 
-*Both games on the same machine: RTX 3070 · NVIDIA 615.78.08 · CachyOS. Timings measured by the recorder itself.
+*All 3 games on the same machine: RTX 3070 · NVIDIA 615.78.08 · CachyOS. Timings measured by the recorder itself.
 "Had to compile" means a pipeline create over 3 ms, the rule SCSKiller uses.*
 
 | Game | Session | Had to compile | Typical create time | Slowest create | Compile time during loading screens |
 |---|---|---|---|---|---|
+| **The Blood of Dawnwalker** (Steam, Proton) | 1: no cache | 85.5% | 37 ms | 3.8 s | 205 s |
+| | 2: after Record + Re-Compile | **1.1%** | **0.24 ms** | **270 ms** | **30 s** |
 | **Valor Mortis** (Steam, Proton) | 1: no matching cache | 48.9% | 2.83 ms | — | 170 s |
 | | 2: after Record + Re-Compile | **6.0%** | **0.29 ms** | — | 112 s |
 | | 3: after 2nd round (new areas visited) | 8.7% | 0.35 ms | — | **56 s** |
@@ -105,6 +107,7 @@ teaches it the real state, and Shaderless also applies what it learns to shaders
 | | 2: after Record + Re-Compile | **6.7%** | **0.28 ms** | **30 ms** | — |
 | | 3: after 2nd Re-Compile, plus a new area | **2.1%** | **0.25 ms** | 289 ms | — |
 
+- **The Blood of Dawnwalker** (Unreal Engine 5, GE-Proton 11-7): about 17 minutes in session 1 and 10 minutes in session 2 (~19,800 vs ~19,500 pipeline creates; 99.4% of session 2's creates were already known from the 120,041-pipeline compile).
 - **Valor Mortis** (Unreal Engine 5): about 10 minutes per session. New ray tracing pipelines at load: — / 315 / **11**.
 - **End of Abyss** (Unreal Engine 5, UMU-Proton 10.0-4): sessions 2 and 3 repeat the route of session 1 (about 7,250 pipeline creates each, so the comparison is like for like). Compiles after the first minute of play: 213 / **0** / 60. Session 3 then enters an area the first two never visited, and that is where the remaining hitch is: 58 compiles in one 30-second burst.
 - One route per game, no frame-time measurements.

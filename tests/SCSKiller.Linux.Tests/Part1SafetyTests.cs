@@ -687,4 +687,70 @@ public class Part1SafetyTests
             try { if (Directory.Exists(recGameDir)) Directory.Delete(recGameDir, true); } catch { }
         }
     }
+
+    [TestMethod]
+    public void LinuxPlatformGuards_KeyFiles_Middleware_GameFiles_And_ProcessMemory_DoNotRequireKernel32()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "shaderless-mw-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string dllPath = Path.Combine(root, "amd_fidelityfx_dx12.dll");
+            File.WriteAllBytes(dllPath, new byte[] { 0x4D, 0x5A, 0x90, 0x00, 0x01, 0x02, 0x03, 0x04 });
+
+            string id = SCSKiller.Core.App.KeyFiles.Identity(dllPath);
+            Assert.IsFalse(string.IsNullOrEmpty(id));
+            Assert.AreEqual("", SCSKiller.Core.App.KeyFiles.Identity(Path.Combine(root, "missing.dll")));
+
+            var detected = SCSKiller.Core.Planning.Middleware.Detect(root);
+            Assert.HasCount(1, detected);
+            Assert.AreEqual("amd", detected[0].Vendor);
+
+            // Middleware.Scan calls internal KeyFiles.Stamp -> KeyFiles.Identity under the hood
+            var scanned = SCSKiller.Core.Planning.Middleware.Scan(dllPath);
+            Assert.AreEqual(8, scanned.Size);
+            Assert.IsEmpty(scanned.Containers);
+
+            string? finalDir = SCSKiller.Core.Games.GameFiles.FinalPath(root);
+            Assert.IsNotNull(finalDir);
+            Assert.IsNull(SCSKiller.Core.Games.GameFiles.FinalPath(Path.Combine(root, "does-not-exist")));
+
+            var gfId = SCSKiller.Core.Games.GameFiles.Identity(dllPath);
+            Assert.IsNotNull(gfId);
+            Assert.IsNotNull(gfId.Value.Final);
+
+            // Must be a clean no-op on Linux without P/Invoking kernel32.dll
+            SCSKiller.Core.App.ProcessMemory.Trim();
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public void MigrateLegacyFiles_Renames_ScsKiller_Files_To_Shaderless()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "shaderless-mig-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(root, "scskiller.db"), new byte[] { 1, 2, 3 });
+            File.WriteAllText(Path.Combine(root, "scskiller.keys"), "deadbeef\n");
+            File.WriteAllText(Path.Combine(root, "scskiller_creates.csv"), "seq,ms\n1,0.2\n");
+
+            SCSKiller.Linux.Core.Games.RecorderManager.MigrateLegacyFiles(root);
+
+            Assert.IsFalse(File.Exists(Path.Combine(root, "scskiller.db")));
+            Assert.IsTrue(File.Exists(Path.Combine(root, "shaderless.db")));
+            Assert.IsFalse(File.Exists(Path.Combine(root, "scskiller.keys")));
+            Assert.IsTrue(File.Exists(Path.Combine(root, "shaderless.keys")));
+            Assert.IsFalse(File.Exists(Path.Combine(root, "scskiller_creates.csv")));
+            Assert.IsTrue(File.Exists(Path.Combine(root, "shaderless_creates.csv")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
 }
