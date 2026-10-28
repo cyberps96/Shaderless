@@ -18,6 +18,44 @@ class Program
         try { setenv(name, value, 1); } catch { }
     }
 
+    private static void TrySetNativeClipboard(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        var candidates = new List<(string Exe, string[] Args)>();
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY")))
+        {
+            candidates.Add(("wl-copy", Array.Empty<string>()));
+        }
+        candidates.Add(("xclip", new[] { "-selection", "clipboard" }));
+        candidates.Add(("xsel", new[] { "--clipboard", "--input" }));
+
+        foreach (var (exe, args) in candidates)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(exe)
+                {
+                    RedirectStandardInput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                foreach (var a in args) psi.ArgumentList.Add(a);
+
+                using var proc = System.Diagnostics.Process.Start(psi);
+                if (proc == null) continue;
+                proc.StandardInput.Write(text);
+                proc.StandardInput.Close();
+                proc.WaitForExit(250);
+                return;
+            }
+            catch
+            {
+                // Try next clipboard utility
+            }
+        }
+    }
+
     [STAThread]
     static void Main(string[] args)
     {
@@ -139,9 +177,62 @@ class Program
             () => lastKnownGames,
             async (exitedGame, ct) =>
             {
-                await RunGameCompilationAsync(exitedGame, ct);
+                GameInfo target = exitedGame;
+                try
+                {
+                    if (driverBackend != null)
+                    {
+                        var refreshed = await gameManager.ScanAllGamesAsync(driverBackend);
+                        lastKnownGames = refreshed;
+                        target = refreshed.FirstOrDefault(g => g.Id == exitedGame.Id) ?? exitedGame;
+                    }
+                }
+                catch { }
+                await RunGameCompilationAsync(target, ct);
+            },
+            onGameExited: async (_, _) =>
+            {
+                if (clientAcknowledged && compileLock.CurrentCount > 0)
+                {
+                    await SendCurrentStateAsync(waitIfBusy: true);
+                }
             });
         exitMonitor.Start();
+
+        using var configWatchCts = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            string? lastProtonSig = null;
+            try { lastProtonSig = ProtonRunner.GetLauncherProtonConfigSignature(); } catch { }
+
+            while (!configWatchCts.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(2000, configWatchCts.Token);
+                    if (!clientAcknowledged || compileLock.CurrentCount == 0)
+                        continue;
+
+                    string currentSig = ProtonRunner.GetLauncherProtonConfigSignature();
+                    if (lastProtonSig == null)
+                    {
+                        lastProtonSig = currentSig;
+                        continue;
+                    }
+
+                    if (!string.Equals(lastProtonSig, currentSig, StringComparison.Ordinal))
+                    {
+                        lastProtonSig = currentSig;
+                        await SendCurrentStateAsync(waitIfBusy: true);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch { }
+            }
+        });
 
         window.RegisterWebMessageReceivedHandler((sender, message) =>
         {
@@ -155,6 +246,47 @@ class Program
                     if (action == "ack")
                     {
                         clientAcknowledged = true;
+                        return;
+                    }
+
+                    if (action == "copy-text")
+                    {
+                        if (doc.RootElement.TryGetProperty("text", out var txtProp))
+                        {
+                            string? text = txtProp.GetString();
+                            if (!string.IsNullOrEmpty(text) && text.Length <= 512)
+                            {
+                                TrySetNativeClipboard(text);
+                            }
+                        }
+                        return;
+                    }
+
+                    if (action == "open-url")
+                    {
+                        if (doc.RootElement.TryGetProperty("url", out var urlProp))
+                        {
+                            string? url = urlProp.GetString();
+                            if (!string.IsNullOrWhiteSpace(url) &&
+                                Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                                uri.Scheme == Uri.UriSchemeHttps)
+                            {
+                                try
+                                {
+                                    var psi = new System.Diagnostics.ProcessStartInfo("xdg-open")
+                                    {
+                                        UseShellExecute = false,
+                                        CreateNoWindow = true
+                                    };
+                                    psi.ArgumentList.Add(uri.AbsoluteUri);
+                                    System.Diagnostics.Process.Start(psi);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.Error.WriteLine($"Failed to open external URL: {ex.Message}");
+                                }
+                            }
+                        }
                         return;
                     }
 
@@ -186,14 +318,24 @@ class Program
                         bool autoCompile = doc.RootElement.TryGetProperty("autoCompileOnExit", out var acProp)
                             ? acProp.GetBoolean()
                             : current.AutoCompileOnExit;
+                        int maxCacheGb = current.EffectiveMaxCacheSizeGb;
+                        if (doc.RootElement.TryGetProperty("maxCacheSizeGb", out var mcProp))
+                        {
+                            if (mcProp.ValueKind == JsonValueKind.Number && mcProp.TryGetInt32(out int parsedGb))
+                                maxCacheGb = AppSettings.ClampMaxCacheSizeGb(parsedGb);
+                            else if (mcProp.ValueKind == JsonValueKind.String && int.TryParse(mcProp.GetString(), out int strGb))
+                                maxCacheGb = AppSettings.ClampMaxCacheSizeGb(strGb);
+                        }
 
                         // If the user explicitly turns AutoRecordAllGames on, clear previous opt-outs only if requested, or preserve per-game opt-outs
                         var updated = current with
                         {
                             AutoRecordAllGames = autoRecord,
-                            AutoCompileOnExit = autoCompile
+                            AutoCompileOnExit = autoCompile,
+                            MaxCacheSizeGb = maxCacheGb
                         };
                         SCSKiller.Linux.Core.SettingsManager.Save(updated);
+                        ProtonRunner.RefreshInstalledProtonShaderCacheSettings(updated);
                         await SendCurrentStateAsync(waitIfBusy: true);
                     }
                     else if (action == "compile")
@@ -291,5 +433,6 @@ class Program
 
         window.LoadRawString(UiAssets.GetHtml());
         window.WaitForClose();
+        configWatchCts.Cancel();
     }
 }

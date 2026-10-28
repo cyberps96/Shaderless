@@ -20,7 +20,8 @@ public enum GameEngine
     ReEngine,
     Northlight,
     DirectX12,
-    DirectX11
+    DirectX11,
+    Dagor
 }
 
 public enum CacheState

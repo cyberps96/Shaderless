@@ -3,12 +3,14 @@ using SCSKiller.Linux.Core.Models;
 
 namespace SCSKiller.Linux.Core.Games;
 
-/// <summary>Watches running processes for known games when AutoCompileOnExit is enabled in Settings (default: OFF).
-/// When a running game exits and no other game is running, imports any newly recorded pipelines and triggers an incremental compile.</summary>
+/// <summary>Watches running processes for known games.
+/// When a running game exits and no other game is running, imports any newly recorded pipelines and refreshes UI state,
+/// and optionally triggers an incremental compile when AutoCompileOnExit is enabled in Settings (default: OFF).</summary>
 public sealed class GameExitMonitor : IDisposable
 {
     private readonly Func<IReadOnlyList<GameInfo>> _getKnownGames;
     private readonly Func<GameInfo, CancellationToken, Task> _onGameReadyToCompile;
+    private readonly Func<GameInfo, CancellationToken, Task>? _onGameExited;
     private readonly Func<GameInfo, bool> _isGameRunning;
     private readonly HashSet<string> _runningGameIds = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _cts = new();
@@ -17,11 +19,13 @@ public sealed class GameExitMonitor : IDisposable
     public GameExitMonitor(
         Func<IReadOnlyList<GameInfo>> getKnownGames,
         Func<GameInfo, CancellationToken, Task> onGameReadyToCompile,
-        Func<GameInfo, bool>? isGameRunning = null)
+        Func<GameInfo, bool>? isGameRunning = null,
+        Func<GameInfo, CancellationToken, Task>? onGameExited = null)
     {
         _getKnownGames = getKnownGames;
         _onGameReadyToCompile = onGameReadyToCompile;
         _isGameRunning = isGameRunning ?? (g => ProtonRunner.IsGameRunning(g));
+        _onGameExited = onGameExited;
     }
 
     public void Start(TimeSpan? pollInterval = null, TimeSpan? settleDelay = null)
@@ -71,13 +75,6 @@ public sealed class GameExitMonitor : IDisposable
             {
                 await Task.Delay(pollInterval, ct);
 
-                var settings = SettingsManager.Load();
-                if (!settings.AutoCompileOnExit)
-                {
-                    _runningGameIds.Clear();
-                    continue;
-                }
-
                 var games = _getKnownGames();
                 if (games == null || games.Count == 0) continue;
 
@@ -87,11 +84,11 @@ public sealed class GameExitMonitor : IDisposable
                 // Wait for Wine / launcher wrapper processes to finish flushing shaderless.db and releasing cache locks
                 await Task.Delay(settleDelay, ct);
 
-                if (!SettingsManager.Load().AutoCompileOnExit) continue;
-
                 var latestGames = _getKnownGames();
                 if (latestGames.Any(g => { try { return _isGameRunning(g); } catch { return false; } }))
                     continue;
+
+                bool autoCompile = SettingsManager.Load().AutoCompileOnExit;
 
                 foreach (var exited in exitedGames)
                 {
@@ -105,16 +102,25 @@ public sealed class GameExitMonitor : IDisposable
                         int newlyImported = 0;
                         try { newlyImported = RecorderManager.Import(exited); } catch { }
 
-                        int totalRecorded = RecorderManager.RecordedPsos(exited);
-                        var warmedKeys = RecorderManager.LoadWarmedKeys(exited.Id);
-
-                        bool needsCompile = newlyImported > 0
-                            || exited.State != CacheState.Cached
-                            || (totalRecorded > 0 && totalRecorded > warmedKeys.Count);
-
-                        if (needsCompile)
+                        if (autoCompile)
                         {
-                            await _onGameReadyToCompile(exited, ct);
+                            int totalRecorded = RecorderManager.RecordedPsos(exited);
+                            var warmedKeys = RecorderManager.LoadWarmedKeys(exited.Id);
+
+                            bool needsCompile = newlyImported > 0
+                                || exited.State != CacheState.Cached
+                                || (totalRecorded > 0 && totalRecorded > warmedKeys.Count);
+
+                            if (needsCompile)
+                            {
+                                await _onGameReadyToCompile(exited, ct);
+                                continue;
+                            }
+                        }
+
+                        if (_onGameExited != null)
+                        {
+                            await _onGameExited(exited, ct);
                         }
                     }
                     catch { }

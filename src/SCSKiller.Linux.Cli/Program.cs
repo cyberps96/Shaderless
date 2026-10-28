@@ -31,7 +31,7 @@ class Program
             case "list":
             case "scan":
             case "games":
-                return await ListGamesAsync(gameManager, driverBackend);
+                return await ListGamesAsync(gameManager, driverBackend, args.Skip(1).ToArray());
 
             case "diagnose":
             case "diag":
@@ -104,7 +104,7 @@ class Program
         Console.WriteLine("  ./run-cli.sh status              Show GPU driver and shader cache stats");
         Console.WriteLine("  ./run-cli.sh list                List detected games across Steam, Heroic & Lutris (Native + Flatpak)");
         Console.WriteLine("  ./run-cli.sh diagnose            Inspect all checked library paths, discovered games, and skipped entries");
-        Console.WriteLine("  ./run-cli.sh settings            Show or update automation settings (all default to OFF)");
+        Console.WriteLine("  ./run-cli.sh settings            Show or update automation & max cache size settings");
         Console.WriteLine("  ./run-cli.sh compile <id|name>   Pre-compile shaders for a specific game");
         Console.WriteLine("  ./run-cli.sh compile-all         Pre-compile shaders for all uncompiled games");
         Console.WriteLine("  ./run-cli.sh clear <id|name>     Purge shader cache for a specific game (e.g. cyberpunk)");
@@ -132,11 +132,22 @@ class Program
                 settings = settings with { AutoCompileOnExit = val };
                 modified = true;
             }
+            else if ((args[i].Equals("--max-cache-gb", StringComparison.OrdinalIgnoreCase) ||
+                      args[i].Equals("--max-cache", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
+            {
+                string rawVal = args[++i].TrimEnd('g', 'G', 'b', 'B');
+                if (int.TryParse(rawVal, out int gb))
+                {
+                    settings = settings with { MaxCacheSizeGb = AppSettings.ClampMaxCacheSizeGb(gb) };
+                    modified = true;
+                }
+            }
         }
 
         if (modified)
         {
             SCSKiller.Linux.Core.SettingsManager.Save(settings);
+            ProtonRunner.RefreshInstalledProtonShaderCacheSettings(settings);
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("Updated settings saved.\n");
             Console.ResetColor();
@@ -145,7 +156,8 @@ class Program
         Console.WriteLine($"Settings file: {SCSKiller.Linux.Core.SettingsManager.DefaultSettingsFilePath}");
         Console.WriteLine($"  Auto-Record All Games:          {(settings.AutoRecordAllGames ? "ON" : "OFF")}");
         Console.WriteLine($"  Auto-Compile After Game Closes: {(settings.AutoCompileOnExit ? "ON" : "OFF")}");
-        Console.WriteLine("\nUsage: ./run-cli.sh settings [--auto-record on|off] [--auto-compile on|off]\n");
+        Console.WriteLine($"  Max Shader Cache Size:          {settings.EffectiveMaxCacheSizeGb} GB (5-500 GB)");
+        Console.WriteLine("\nUsage: ./run-cli.sh settings [--auto-record on|off] [--auto-compile on|off] [--max-cache-gb <5..500>]\n");
         return 0;
     }
 
@@ -166,6 +178,7 @@ class Program
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"Total Cache on Disk:  {FormatBytes(info.TotalCacheSizeBytes)}");
         Console.ResetColor();
+        Console.WriteLine($"Max Cache Cap:        {SCSKiller.Linux.Core.SettingsManager.Load().EffectiveMaxCacheSizeGb} GB (configurable via './run-cli.sh settings --max-cache-gb <GB>')");
 
         Console.WriteLine($"Status:               {info.Status} {(info.StatusMessage != null ? $"({info.StatusMessage})" : "")}");
 
@@ -180,21 +193,61 @@ class Program
         return 0;
     }
 
-    static async Task<int> ListGamesAsync(GameManager manager, IDriverBackend backend)
+    static async Task<int> ListGamesAsync(GameManager manager, IDriverBackend backend, string[] filterArgs)
     {
-        Console.WriteLine("Scanning game libraries (Steam, Heroic, Lutris — Native & Flatpak)...");
-        var games = await manager.ScanAllGamesAsync(backend);
+        GameSource? sourceFilter = null;
+        bool onlyNeedsCompile = false;
+        var searchParts = new List<string>();
 
-        if (games.Count == 0)
+        for (int i = 0; i < filterArgs.Length; i++)
+        {
+            string arg = filterArgs[i];
+            if ((arg.Equals("--source", StringComparison.OrdinalIgnoreCase) || arg.Equals("-s", StringComparison.OrdinalIgnoreCase)) && i + 1 < filterArgs.Length)
+            {
+                string val = filterArgs[++i];
+                if (Enum.TryParse<GameSource>(val, ignoreCase: true, out var parsedSource))
+                    sourceFilter = parsedSource;
+            }
+            else if (arg.Equals("--needs-compile", StringComparison.OrdinalIgnoreCase) || arg.Equals("--uncompiled", StringComparison.OrdinalIgnoreCase))
+            {
+                onlyNeedsCompile = true;
+            }
+            else if (Enum.TryParse<GameSource>(arg, ignoreCase: true, out var directSource) && searchParts.Count == 0 && !sourceFilter.HasValue)
+            {
+                sourceFilter = directSource;
+            }
+            else
+            {
+                searchParts.Add(arg);
+            }
+        }
+
+        string? searchQuery = searchParts.Count > 0 ? string.Join(' ', searchParts) : null;
+
+        Console.WriteLine("Scanning game libraries (Steam, Heroic, Lutris — Native & Flatpak)...");
+        var allGames = await manager.ScanAllGamesAsync(backend);
+
+        if (allGames.Count == 0)
         {
             Console.WriteLine("No games discovered in Steam, Heroic, or Lutris libraries.");
             Console.WriteLine("Tip: Run './run-cli.sh diagnose' to see all checked paths and why entries were skipped.");
             return 0;
         }
 
-        Console.WriteLine($"\nFound {games.Count} installed games:\n");
-        Console.WriteLine(string.Format("{0,-16} {1,-30} {2,-14} {3,-24} {4,-10} {5,-12}", "Source", "Name", "Engine", "Status", "Shaders", "Disk Cache"));
-        Console.WriteLine(new string('-', 112));
+        var games = GameManager.FilterGames(allGames, sourceFilter, searchQuery, onlyNeedsCompile);
+        if (games.Count == 0)
+        {
+            Console.WriteLine($"\n0 of {allGames.Count} installed games matched your filter.");
+            Console.WriteLine("Usage: ./run-cli.sh list [--source steam|heroic|lutris] [--needs-compile] [<search>]\n");
+            return 0;
+        }
+
+        string headerCount = games.Count == allGames.Count
+            ? $"Found {games.Count} installed games:"
+            : $"Showing {games.Count} of {allGames.Count} installed games:";
+        Console.WriteLine($"\n{headerCount}\n");
+        Console.WriteLine(string.Format("{0,-15} {1,-28} {2,-14} {3,-22} {4,-10} {5,-10} {6,-12}", "Source", "Name", "Engine", "Status", "Recorded", "Shaders", "Disk Cache"));
+        Console.WriteLine(new string('-', 118));
 
         foreach (var g in games)
         {
@@ -205,18 +258,20 @@ class Program
             string statusLabel = g.State == CacheState.Outdated
                 ? (!string.IsNullOrEmpty(g.StaleReason) ? $"Stale ({g.StaleReason})" : "Stale")
                 : g.State.ToString();
-            Console.WriteLine(string.Format("{0,-16} {1,-30} {2,-14} {3,-24} {4,-10} {5,-12}",
+            string recLabel = g.RecordedPsos > 0 ? g.RecordedPsos.ToString("N0") : "-";
+            Console.WriteLine(string.Format("{0,-15} {1,-28} {2,-14} {3,-22} {4,-10} {5,-10} {6,-12}",
                 srcLabel,
-                Truncate(g.Name, 28),
+                Truncate(g.Name, 26),
                 g.Engine,
-                Truncate(statusLabel, 23),
+                Truncate(statusLabel, 21),
+                recLabel,
                 $"~{g.TotalShadersEstimated:N0}",
                 cacheStr));
             Console.ResetColor();
         }
 
-        Console.WriteLine("\nRun './run-cli.sh compile <id|name>' to pre-compile shaders ahead of time.");
-        Console.WriteLine("Run './run-cli.sh diagnose' for detailed library path & manifest diagnostics.\n");
+        Console.WriteLine("\nFilter tip: './run-cli.sh list steam', './run-cli.sh list --needs-compile', or './run-cli.sh list <name>'.");
+        Console.WriteLine("Run './run-cli.sh compile <id|name>' to pre-compile shaders ahead of time.\n");
         return 0;
     }
 

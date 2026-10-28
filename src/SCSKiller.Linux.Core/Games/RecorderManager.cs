@@ -261,6 +261,48 @@ public static class RecorderManager
         catch { }
     }
 
+    public static string? GetWarmedStampMismatchReason(string gameId, string? currentDriverVersion, string? currentProtonStamp)
+    {
+        try
+        {
+            string path = WarmedKeysPath(gameId);
+            if (!File.Exists(path)) return null;
+
+            using var sr = new StreamReader(path);
+            string? firstLine = sr.ReadLine();
+            if (string.IsNullOrEmpty(firstLine) || !firstLine.StartsWith("#STAMP:", StringComparison.Ordinal))
+                return null;
+
+            string savedStamp = firstLine["#STAMP:".Length..].Trim();
+            int firstPipe = savedStamp.IndexOf('|');
+            if (firstPipe <= 0) return null;
+
+            string savedDriver = savedStamp[..firstPipe];
+            string savedProton = savedStamp[(firstPipe + 1)..];
+
+            if (!string.IsNullOrEmpty(savedDriver) &&
+                !string.IsNullOrEmpty(currentDriverVersion) &&
+                !string.Equals(savedDriver, "Unknown", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(currentDriverVersion, "Unknown", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(savedDriver, currentDriverVersion, StringComparison.Ordinal))
+            {
+                return "driver updated";
+            }
+
+            if (!string.IsNullOrEmpty(savedProton) &&
+                !string.IsNullOrEmpty(currentProtonStamp) &&
+                !string.Equals(savedProton, "unknown", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(currentProtonStamp, "unknown", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(savedProton, currentProtonStamp, StringComparison.Ordinal))
+            {
+                return "Proton updated";
+            }
+        }
+        catch { }
+
+        return null;
+    }
+
     public static HashSet<string> LoadWarmedKeys(string gameId, string? expectedRuntimeStamp = null, string? previousWorkDir = null)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
@@ -496,5 +538,362 @@ public static class RecorderManager
             try { if (r.Tag is 'G' or 'S' && PsoDb.Parse(r).Stages.ContainsKey((int)SCSKiller.Core.Stage.Vertex)) return true; }
             catch (Exception e) when (e is InvalidDataException or ArgumentException or KeyNotFoundException) { }
         return false;
+    }
+
+    /// <summary>
+    /// Materializes a standalone <c>recording.db</c> directly into <paramref name="outDbPath"/> (<c>shaderless.db</c>)
+    /// when a game's static shader archives cannot be read (e.g. CryEngine, custom DX12 engines, or encrypted archives without a key).
+    /// Preserves all recorded <c>'B'</c> bytecode/root-signature blobs, pulls any middleware shader blobs from DLLs beside the exe,
+    /// and emits only self-contained, replayable pipeline records. Returns the number of replayable pipelines written.
+    /// </summary>
+    public static int MaterializeStandaloneRecording(
+        string storePath,
+        SCSKiller.Core.Game scsGame,
+        string outDbPath,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(storePath) || !File.Exists(storePath) || new FileInfo(storePath).Length == 0)
+            return 0;
+
+        List<PsoDb.Rec> records;
+        using (Recordings.Lock(storePath))
+        {
+            records = PsoDb.Read(storePath).ToList();
+        }
+
+        if (records.Count == 0)
+            return 0;
+
+        var availableBlobs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in records)
+        {
+            if (r.Tag == 'B' && r.Payload.Length >= 20)
+                availableBlobs.Add(PsoDb.Hex(r.Payload.AsSpan(0, 20)));
+        }
+
+        var missingRefs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var r in records)
+        {
+            if (r.Tag is 'B' or 'L' or 'W' or 'N') continue;
+            try
+            {
+                foreach (var h in Rehydrate.References([r]))
+                {
+                    if (!availableBlobs.Contains(h))
+                        missingRefs.Add(h);
+                }
+            }
+            catch { }
+        }
+
+        var extraBlobs = new List<(string Sha1, byte[] Bytes)>();
+        if (missingRefs.Count > 0)
+        {
+            try
+            {
+                foreach (var (sha1, bytes) in Middleware.Blobs(scsGame, missingRefs))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (availableBlobs.Add(sha1))
+                        extraBlobs.Add((sha1, bytes));
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { }
+        }
+
+        var keptKeys = new HashSet<string>(StringComparer.Ordinal);
+        var keptRecords = new List<PsoDb.Rec>();
+
+        foreach (var r in records)
+        {
+            if (r.Tag is 'B' or 'L' or 'N') continue;
+            if (r.Tag == 'W')
+            {
+                keptRecords.Add(r);
+                continue;
+            }
+
+            if (r.Tag is 'G' or 'C' or 'S' or 'R' or 'A' or 'P' or '1' or '2')
+            {
+                try
+                {
+                    if (!Rehydrate.References([r]).IsSubsetOf(availableBlobs))
+                        continue;
+                    if (PsoDb.IsStateObject(r.Tag) && !PsoDb.ParseStateObject(r).Depends.All(keptKeys.Contains))
+                        continue;
+                    keptRecords.Add(r);
+                    keptKeys.Add(r.Key);
+                }
+                catch { }
+            }
+        }
+
+        if (keptKeys.Count == 0)
+            return 0;
+
+        foreach (var r in records)
+        {
+            if (r.Tag != 'N') continue;
+            try
+            {
+                if (keptKeys.Contains(PsoDb.NvState.Parse(r).Target))
+                    keptRecords.Add(r);
+            }
+            catch { }
+        }
+
+        string outDir = Path.GetDirectoryName(Path.GetFullPath(outDbPath))!;
+        Directory.CreateDirectory(outDir);
+        string tmp = $"{outDbPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var fs = File.Create(tmp))
+            using (var bs = new BufferedStream(fs, 1 << 20))
+            {
+                foreach (var r in records)
+                {
+                    if (r.Tag == 'B')
+                        PsoDb.Write(bs, 'B', r.Payload);
+                }
+                foreach (var (sha1, bytes) in extraBlobs)
+                {
+                    PsoDb.WriteBlob(bs, sha1, bytes);
+                }
+                foreach (var r in keptRecords)
+                {
+                    PsoDb.Write(bs, r.Tag, r.Payload);
+                }
+            }
+            File.Move(tmp, outDbPath, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
+
+        return keptKeys.Count;
+    }
+
+    public sealed record WarmerBatchSlice(string BatchDbPath, int SkipPrefixCount, int ExecutableItemCount);
+
+    public static int CountExecutableItems(string recDbPath, string genDbPath)
+    {
+        var seenRecKeys = new HashSet<string>(StringComparer.Ordinal);
+        int planAnd11Count = 0;
+
+        foreach (var dbPath in new[] { recDbPath, genDbPath })
+        {
+            if (string.IsNullOrEmpty(dbPath) || !File.Exists(dbPath) || new FileInfo(dbPath).Length == 0)
+                continue;
+
+            foreach (var r in PsoDb.Read(dbPath))
+            {
+                if (r.Tag is 'G' or 'C' or 'S' or 'R' or 'A')
+                {
+                    seenRecKeys.Add(r.Key);
+                }
+                else if (r.Tag is 'P' or '1' or '2')
+                {
+                    planAnd11Count++;
+                }
+            }
+        }
+
+        return seenRecKeys.Count + planAnd11Count;
+    }
+
+    /// <summary>
+    /// Splits <paramref name="recDbPath"/> and <paramref name="genDbPath"/> into self-contained batch databases of at most
+    /// <paramref name="maxItemsPerBatch"/> executable pipelines each so large games (e.g. 100k+ PSOs) never exceed NVIDIA's
+    /// single-file ~2 GiB writable bucket limit during warming. Any template/state-object dependencies from earlier batches
+    /// are prepended before the batch's executable records and skipped via <see cref="WarmerBatchSlice.SkipPrefixCount"/>
+    /// (<c>--start</c> in <c>shaderless_warm.exe</c>).
+    /// </summary>
+    public static IReadOnlyList<WarmerBatchSlice> SplitDatabasesIntoBatches(
+        string recDbPath,
+        string genDbPath,
+        string batchRootDir,
+        int maxItemsPerBatch = 40_000)
+    {
+        if (maxItemsPerBatch < 1)
+            maxItemsPerBatch = 1;
+
+        var blobsByHash = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        var uniqueRecs = new List<PsoDb.Rec>();
+        var recByKey = new Dictionary<string, PsoDb.Rec>(StringComparer.Ordinal);
+        var planItems = new List<PsoDb.Rec>();
+        var d3d11Items = new List<PsoDb.Rec>();
+
+        foreach (var dbPath in new[] { recDbPath, genDbPath })
+        {
+            if (string.IsNullOrEmpty(dbPath) || !File.Exists(dbPath) || new FileInfo(dbPath).Length == 0)
+                continue;
+
+            foreach (var r in PsoDb.Read(dbPath))
+            {
+                if (r.Tag == 'B')
+                {
+                    if (r.Payload.Length >= 20)
+                    {
+                        string h = PsoDb.Hex(r.Payload.AsSpan(0, 20));
+                        blobsByHash.TryAdd(h, r.Payload);
+                    }
+                }
+                else if (r.Tag is 'G' or 'C' or 'S' or 'R' or 'A')
+                {
+                    string key = r.Key;
+                    if (recByKey.TryAdd(key, r))
+                        uniqueRecs.Add(r);
+                }
+                else if (r.Tag == 'P')
+                {
+                    planItems.Add(r);
+                }
+                else if (r.Tag is '1' or '2')
+                {
+                    d3d11Items.Add(r);
+                }
+            }
+        }
+
+        var allExecutable = new List<PsoDb.Rec>(uniqueRecs.Count + planItems.Count + d3d11Items.Count);
+        allExecutable.AddRange(uniqueRecs);
+        allExecutable.AddRange(planItems);
+        allExecutable.AddRange(d3d11Items);
+
+        if (allExecutable.Count == 0)
+            return Array.Empty<WarmerBatchSlice>();
+
+        if (Directory.Exists(batchRootDir))
+        {
+            try { Directory.Delete(batchRootDir, recursive: true); } catch { }
+        }
+        Directory.CreateDirectory(batchRootDir);
+
+        var slices = new List<WarmerBatchSlice>();
+        int batchIndex = 0;
+
+        for (int offset = 0; offset < allExecutable.Count; offset += maxItemsPerBatch)
+        {
+            int count = Math.Min(maxItemsPerBatch, allExecutable.Count - offset);
+            var chunkRecs = new List<PsoDb.Rec>();
+            var chunkRecKeys = new HashSet<string>(StringComparer.Ordinal);
+            var chunkPlan = new List<PsoDb.Rec>();
+            var chunk11 = new List<PsoDb.Rec>();
+
+            for (int i = 0; i < count; i++)
+            {
+                var item = allExecutable[offset + i];
+                if (item.Tag is 'G' or 'C' or 'S' or 'R' or 'A')
+                {
+                    chunkRecs.Add(item);
+                    chunkRecKeys.Add(item.Key);
+                }
+                else if (item.Tag == 'P')
+                {
+                    chunkPlan.Add(item);
+                }
+                else if (item.Tag is '1' or '2')
+                {
+                    chunk11.Add(item);
+                }
+            }
+
+            // Collect transitive template / base-state-object dependencies not already in chunkRecKeys
+            var depKeys = new HashSet<string>(StringComparer.Ordinal);
+            var workQueue = new Queue<string>();
+
+            void EnqueueDepIfExternal(string key)
+            {
+                if (!chunkRecKeys.Contains(key) && recByKey.ContainsKey(key) && depKeys.Add(key))
+                    workQueue.Enqueue(key);
+            }
+
+            foreach (var p in chunkPlan)
+            {
+                if (p.Payload.Length >= 20)
+                    EnqueueDepIfExternal(PsoDb.Hex(p.Payload.AsSpan(0, 20)));
+            }
+
+            foreach (var r in chunkRecs)
+            {
+                if (r.Tag == 'A' && r.Payload.Length >= 20)
+                    EnqueueDepIfExternal(PsoDb.Hex(r.Payload.AsSpan(0, 20)));
+                if (PsoDb.IsStateObject(r.Tag))
+                {
+                    try
+                    {
+                        foreach (var dep in PsoDb.ParseStateObject(r).Depends)
+                            EnqueueDepIfExternal(dep);
+                    }
+                    catch { }
+                }
+            }
+
+            while (workQueue.Count > 0)
+            {
+                string depKey = workQueue.Dequeue();
+                if (!recByKey.TryGetValue(depKey, out var depRec)) continue;
+                if (depRec.Tag == 'A' && depRec.Payload.Length >= 20)
+                    EnqueueDepIfExternal(PsoDb.Hex(depRec.Payload.AsSpan(0, 20)));
+                if (PsoDb.IsStateObject(depRec.Tag))
+                {
+                    try
+                    {
+                        foreach (var subDep in PsoDb.ParseStateObject(depRec).Depends)
+                            EnqueueDepIfExternal(subDep);
+                    }
+                    catch { }
+                }
+            }
+
+            var depTemplates = depKeys.Count > 0
+                ? uniqueRecs.Where(r => depKeys.Contains(r.Key)).ToList()
+                : new List<PsoDb.Rec>();
+
+            var allBatchNonBlobRecords = new List<PsoDb.Rec>(depTemplates.Count + chunkRecs.Count + chunkPlan.Count + chunk11.Count);
+            allBatchNonBlobRecords.AddRange(depTemplates);
+            allBatchNonBlobRecords.AddRange(chunkRecs);
+            allBatchNonBlobRecords.AddRange(chunkPlan);
+            allBatchNonBlobRecords.AddRange(chunk11);
+
+            HashSet<string> neededBlobs;
+            try
+            {
+                neededBlobs = Rehydrate.References(allBatchNonBlobRecords);
+            }
+            catch
+            {
+                neededBlobs = blobsByHash.Keys.ToHashSet(StringComparer.Ordinal);
+            }
+
+            string batchDir = Path.Combine(batchRootDir, $"batch_{batchIndex:D3}");
+            Directory.CreateDirectory(batchDir);
+            string batchDbPath = Path.Combine(batchDir, "shaderless.db");
+
+            using (var fs = File.Create(batchDbPath))
+            using (var bs = new BufferedStream(fs, 1 << 20))
+            {
+                foreach (var blobHash in neededBlobs)
+                {
+                    if (blobsByHash.TryGetValue(blobHash, out var blobPayload))
+                        PsoDb.Write(bs, 'B', blobPayload);
+                }
+
+                foreach (var rec in allBatchNonBlobRecords)
+                {
+                    PsoDb.Write(bs, rec.Tag, rec.Payload);
+                }
+            }
+
+            slices.Add(new WarmerBatchSlice(
+                BatchDbPath: batchDbPath,
+                SkipPrefixCount: depTemplates.Count,
+                ExecutableItemCount: chunkRecs.Count + chunkPlan.Count + chunk11.Count));
+            batchIndex++;
+        }
+
+        return slices;
     }
 }

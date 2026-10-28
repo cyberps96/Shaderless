@@ -47,11 +47,11 @@ If your games don't show up, please [open an issue](../../issues) with the launc
 
 Needs Steam with **Proton** (Heroic / Lutris libraries are partly supported, see [Library support](#library-support)), and WebKitGTK (`webkit2gtk-4.1`) for the window.
 
-Download **`Shaderless-v0.2.1-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
+Download **`Shaderless-v0.2.2-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
 
 ```bash
-tar -xzf Shaderless-v0.2.1-beta-linux-x64.tar.gz
-cd Shaderless-v0.2.1-beta-linux-x64
+tar -xzf Shaderless-v0.2.2-beta-linux-x64.tar.gz
+cd Shaderless-v0.2.2-beta-linux-x64
 ./run-gui.sh          # launch the app
 ./install-desktop.sh  # optional: adds Shaderless (with its icon) to your app menu and desktop
 ```
@@ -78,7 +78,7 @@ The two Windows-side helpers (`d3d12.dll` recorder, `shaderless_warm.exe` warmer
 3. Click **⚡ Compile** / **Re-Compile**.
 4. Play. What you recorded is now smooth. Leave Record on: each session adds anything new, and the next Re-Compile only compiles the new pipelines (incremental re-compile).
 
-- **⚙️ Settings (both OFF by default):** Open **⚙️ Settings** in the header (or run `./run-cli.sh settings`) to optionally turn on **Record all games automatically** (installs the recorder on eligible DX12 games without anti-cheat) and **Compile automatically after a game closes** (watches for recorded games exiting and compiles new pipelines automatically while the app is open).
+- **⚙️ Settings:** Open **⚙️ Settings** in the header (or run `./run-cli.sh settings`) to optionally turn on **Record all games automatically** (OFF by default), **Compile automatically after a game closes** (OFF by default), or adjust **Max shader cache size** (10 GB default, up to 500 GB — raises GPU driver cache limits and automatically splits large NVIDIA caches into `<1.85 GB` multi-part files so UE5 games never truncate at 2 GB or evict older shaders).
 - **Stale detection:** After a GPU driver update, Proton update, or game patch, Shaderless marks affected caches as **Stale** so you know when a full **Re-Compile** is needed.
 
 ### Why Record matters more on Linux than on Windows

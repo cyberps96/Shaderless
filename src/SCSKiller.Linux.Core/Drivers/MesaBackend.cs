@@ -114,35 +114,40 @@ public class MesaBackend : IDriverBackend
         long globalSize = 0;
         int globalFiles = 0;
 
+        var globalCacheFiles = new List<string>();
         foreach (var dir in candidateDirs.Where(Directory.Exists))
         {
             try
             {
-                var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
-                globalFiles += files.Length;
-                foreach (var file in files)
-                {
-                    globalSize += new FileInfo(file).Length;
-                }
+                globalCacheFiles.AddRange(Directory.GetFiles(dir, "*", SearchOption.AllDirectories));
             }
             catch { }
+        }
+        if (globalCacheFiles.Count > 0)
+        {
+            var summedGlobal = ProtonRunner.SumUniqueFileBytes(globalCacheFiles);
+            globalSize = summedGlobal.Bytes;
+            globalFiles = summedGlobal.UniqueFiles;
         }
 
         // Measure Steam per-game shader caches across Native & Flatpak Steam
         long steamSize = 0;
         int steamFiles = 0;
+        var steamCacheFiles = new List<string>();
         foreach (var steamShaderCache in ProtonRunner.GetAllSteamShaderCacheRoots())
         {
             try
             {
-                var files = Directory.GetFiles(steamShaderCache, "*", SearchOption.AllDirectories);
-                steamFiles += files.Length;
-                foreach (var file in files)
-                {
-                    steamSize += new FileInfo(file).Length;
-                }
+                steamCacheFiles.AddRange(Directory.GetFiles(steamShaderCache, "*", SearchOption.AllDirectories)
+                    .Where(ProtonRunner.IsCompiledShaderCacheFile));
             }
             catch { }
+        }
+        if (steamCacheFiles.Count > 0)
+        {
+            var summedSteam = ProtonRunner.SumUniqueFileBytes(steamCacheFiles);
+            steamSize = summedSteam.Bytes;
+            steamFiles = summedSteam.UniqueFiles;
         }
 
         long totalSize = globalSize + steamSize;
@@ -184,8 +189,9 @@ public class MesaBackend : IDriverBackend
                     var files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories)
                         .Where(ProtonRunner.IsCompiledShaderCacheFile)
                         .ToArray();
-                    foreach (var f in files) totalBytes += new FileInfo(f).Length;
-                    totalFiles += files.Length;
+                    var summed = ProtonRunner.SumUniqueFileBytes(files);
+                    totalBytes += summed.Bytes;
+                    totalFiles += summed.UniqueFiles;
                     foundPath = targetPath;
                 }
                 catch { }
@@ -225,6 +231,12 @@ public class MesaBackend : IDriverBackend
                 string targetPath = ProtonRunner.GetSteamShaderCachePath(gameId, null, prefixPath);
                 if (Directory.Exists(targetPath))
                 {
+                    string manifest = Path.Combine(targetPath, "installed-files.txt");
+                    if (File.Exists(manifest))
+                    {
+                        foreach (var p in File.ReadAllLines(manifest).Where(l => l.Length > 0))
+                            try { File.Delete(p); } catch { }
+                    }
                     foreach (var subDir in Directory.GetDirectories(targetPath))
                     {
                         string name = Path.GetFileName(subDir);
@@ -276,6 +288,7 @@ public class MesaBackend : IDriverBackend
 
     public string GetRecommendedEnvironmentVariables()
     {
-        return "MESA_SHADER_CACHE_MAX_SIZE=10G\nRADV_PERFTEST=aco";
+        var settings = SCSKiller.Linux.Core.SettingsManager.Load();
+        return $"MESA_SHADER_CACHE_MAX_SIZE={settings.MesaMaxCacheSize}\nRADV_PERFTEST=aco";
     }
 }

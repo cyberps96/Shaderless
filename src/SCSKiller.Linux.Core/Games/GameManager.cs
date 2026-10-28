@@ -94,6 +94,43 @@ public class GameManager
         }
     }
 
+    public static IReadOnlyList<GameInfo> FilterGames(
+        IEnumerable<GameInfo> games,
+        GameSource? sourceFilter = null,
+        string? searchQuery = null,
+        bool onlyNeedsCompile = false)
+    {
+        if (games == null) return Array.Empty<GameInfo>();
+
+        var query = searchQuery?.Trim();
+        bool hasQuery = !string.IsNullOrEmpty(query);
+
+        return games.Where(g =>
+        {
+            if (sourceFilter.HasValue && g.Source != sourceFilter.Value)
+                return false;
+
+            if (onlyNeedsCompile)
+            {
+                bool needsAction = g.State != CacheState.Cached || g.NewRecordedPsos > 0;
+                if (!needsAction) return false;
+            }
+
+            if (hasQuery)
+            {
+                bool matchName = g.Name.Contains(query!, StringComparison.OrdinalIgnoreCase);
+                bool matchId = g.Id.Contains(query!, StringComparison.OrdinalIgnoreCase);
+                bool matchEngine = g.Engine.ToString().Contains(query!, StringComparison.OrdinalIgnoreCase);
+                bool matchSource = g.Source.ToString().Contains(query!, StringComparison.OrdinalIgnoreCase)
+                                   || (g.IsFlatpak && "flatpak".Contains(query!, StringComparison.OrdinalIgnoreCase));
+                if (!matchName && !matchId && !matchEngine && !matchSource)
+                    return false;
+            }
+
+            return true;
+        }).ToList();
+    }
+
     public static string? EvaluateStaleReason(
         string? savedDriver,
         string? savedProton,
@@ -167,7 +204,7 @@ public class GameManager
             DateTime? compiledAt;
             string? staleReason = null;
 
-            if (cacheBytes > 0)
+            if (cacheBytes > 0 && ProtonRunner.HasShaderlessCompiledArtifacts(g))
             {
                 string currentProton = ProtonRunner.GetProtonStamp(g);
                 string currentBuild = ProtonRunner.GetGameBuildStamp(g);
@@ -184,7 +221,10 @@ public class GameManager
                         currentDriverVersion,
                         currentProton,
                         currentBuild,
-                        rec.CompiledAt);
+                        rec.CompiledAt)
+                        ?? RecorderManager.GetWarmedStampMismatchReason(g.Id, currentDriverVersion, currentProton)
+                        ?? ProtonRunner.GetRuntimeCacheStampMismatchReason(g)
+                        ?? (driverBackend.Vendor == GpuVendor.Nvidia && ProtonRunner.IsNvidiaCacheTruncated(g) ? "cache truncated" : null);
 
                     state = staleReason != null ? CacheState.Outdated : CacheState.Cached;
 
@@ -202,17 +242,23 @@ public class GameManager
                 }
                 else
                 {
-                    state = CacheState.Cached;
+                    staleReason = RecorderManager.GetWarmedStampMismatchReason(g.Id, currentDriverVersion, currentProton)
+                               ?? ProtonRunner.GetRuntimeCacheStampMismatchReason(g)
+                               ?? (driverBackend.Vendor == GpuVendor.Nvidia && ProtonRunner.IsNvidiaCacheTruncated(g) ? "cache truncated" : null);
+                    state = staleReason != null ? CacheState.Outdated : CacheState.Cached;
                     compiledCount = g.TotalShadersEstimated;
                     compiledAt = DateTime.UtcNow;
-                    savedStates[g.Id] = new GameStateRecord(
-                        CacheState.Cached,
-                        compiledCount,
-                        compiledAt.Value,
-                        currentDriverVersion,
-                        currentProton,
-                        currentBuild);
-                    statesModified = true;
+                    if (staleReason == null)
+                    {
+                        savedStates[g.Id] = new GameStateRecord(
+                            CacheState.Cached,
+                            compiledCount,
+                            compiledAt.Value,
+                            currentDriverVersion,
+                            currentProton,
+                            currentBuild);
+                        statesModified = true;
+                    }
                 }
             }
             else
@@ -220,6 +266,10 @@ public class GameManager
                 state = CacheState.NeedsCompilation;
                 compiledCount = 0;
                 compiledAt = null;
+                if (savedStates.Remove(g.Id))
+                {
+                    statesModified = true;
+                }
             }
 
             bool recorder = false;

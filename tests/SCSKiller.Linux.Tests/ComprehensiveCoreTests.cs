@@ -77,15 +77,18 @@ public class ComprehensiveCoreTests
 
         foreach (var g in games)
         {
-            if (g.CacheSizeBytes > 0)
+            if (g.CacheSizeBytes > 0 && ProtonRunner.HasShaderlessCompiledArtifacts(g))
             {
                 Assert.IsTrue(
                     g.State == CacheState.Cached || g.State == CacheState.Outdated,
-                    $"Game {g.Name} with {g.CacheSizeBytes} bytes must be Cached or Outdated.");
+                    $"Game {g.Name} with {g.CacheSizeBytes} bytes and Shaderless artifacts must be Cached or Outdated.");
             }
             else
             {
-                Assert.AreEqual(CacheState.NeedsCompilation, g.State, $"Game {g.Name} with 0 bytes must NOT be Cached.");
+                Assert.AreEqual(
+                    CacheState.NeedsCompilation,
+                    g.State,
+                    $"Game {g.Name} without Shaderless compilation artifacts (or 0 bytes) must be NeedsCompilation.");
             }
         }
     }

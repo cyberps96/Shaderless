@@ -276,21 +276,10 @@ public class LutrisLinuxSource : IGameSource
         return result;
     }
 
-    /// <summary>The game's install folder from the path of its exe: an Unreal game's exe sits in &lt;root&gt;/&lt;Project&gt;/Binaries/Win64,
-    /// and the root (with the Engine folder) is what the engine readers want; any other game: the exe's own folder.</summary>
-    internal static string InferInstallRoot(string exePath)
-    {
-        string exeDir = Path.GetDirectoryName(exePath)!;
-        for (var dir = new DirectoryInfo(exeDir); dir?.Parent != null; dir = dir.Parent)
-        {
-            if (!dir.Name.Equals("Binaries", StringComparison.OrdinalIgnoreCase)) continue;
-            var project = dir.Parent;
-            var root = project.Parent;
-            if (root != null && Directory.Exists(Path.Combine(root.FullName, "Engine"))) return root.FullName;
-            return project.FullName;
-        }
-        return exeDir;
-    }
+    /// <summary>The game's install folder from the path of its exe: delegates to <see cref="GameEngineDetector.InferInstallRoot"/>
+    /// so Unreal, CryEngine, REDengine, Dagor, and multi-level binary subdirectories resolve to the true game root.</summary>
+    internal static string InferInstallRoot(string exePath) =>
+        GameEngineDetector.InferInstallRoot(exePath);
 
     /// <summary>The install folder and exe (Linux paths) of the Epic game <paramref name="appName"/> in the Wine prefix
     /// <paramref name="prefix"/>, from the Epic launcher's manifests; null when it isn't installed there.</summary>

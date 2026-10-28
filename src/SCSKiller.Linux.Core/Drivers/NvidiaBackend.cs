@@ -66,11 +66,9 @@ public class NvidiaBackend : IDriverBackend
             try
             {
                 var files = Directory.GetFiles(globalCachePath, "*", SearchOption.AllDirectories);
-                globalFiles = files.Length;
-                foreach (var file in files)
-                {
-                    globalSize += new FileInfo(file).Length;
-                }
+                var summed = ProtonRunner.SumUniqueFileBytes(files);
+                globalSize = summed.Bytes;
+                globalFiles = summed.UniqueFiles;
             }
             catch { }
         }
@@ -78,18 +76,21 @@ public class NvidiaBackend : IDriverBackend
         // Measure Steam per-game shader caches across Native & Flatpak Steam
         long steamSize = 0;
         int steamFiles = 0;
+        var allSteamFiles = new List<string>();
         foreach (var steamShaderCache in ProtonRunner.GetAllSteamShaderCacheRoots())
         {
             try
             {
-                var files = Directory.GetFiles(steamShaderCache, "*", SearchOption.AllDirectories);
-                steamFiles += files.Length;
-                foreach (var file in files)
-                {
-                    steamSize += new FileInfo(file).Length;
-                }
+                allSteamFiles.AddRange(Directory.GetFiles(steamShaderCache, "*", SearchOption.AllDirectories)
+                    .Where(ProtonRunner.IsCompiledShaderCacheFile));
             }
             catch { }
+        }
+        if (allSteamFiles.Count > 0)
+        {
+            var summedSteam = ProtonRunner.SumUniqueFileBytes(allSteamFiles);
+            steamSize = summedSteam.Bytes;
+            steamFiles = summedSteam.UniqueFiles;
         }
 
         long totalSize = globalSize + steamSize;
@@ -135,12 +136,8 @@ public class NvidiaBackend : IDriverBackend
                     var files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories)
                         .Where(ProtonRunner.IsCompiledShaderCacheFile)
                         .ToArray();
-                    long bytes = 0;
-                    foreach (var f in files)
-                    {
-                        bytes += new FileInfo(f).Length;
-                    }
-                    return (bytes, files.Length, targetPath);
+                    var summed = ProtonRunner.SumUniqueFileBytes(files);
+                    return (summed.Bytes, summed.UniqueFiles, targetPath);
                 }
                 catch { }
             }
@@ -236,6 +233,7 @@ public class NvidiaBackend : IDriverBackend
 
     public string GetRecommendedEnvironmentVariables()
     {
-        return "__GL_SHADER_DISK_CACHE=1\n__GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1\n__GL_SHADER_DISK_CACHE_SIZE=10737418240";
+        var settings = SCSKiller.Linux.Core.SettingsManager.Load();
+        return $"__GL_SHADER_DISK_CACHE=1\n__GL_SHADER_DISK_CACHE_SKIP_CLEANUP=1\n__GL_SHADER_DISK_CACHE_SIZE={settings.MaxCacheSizeBytes}";
     }
 }

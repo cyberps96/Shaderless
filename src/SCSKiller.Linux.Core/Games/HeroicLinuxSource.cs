@@ -127,7 +127,7 @@ public class HeroicLinuxSource : IGameSource
 
                                     if (!seenIdsInScope.Add(appId)) continue;
 
-                                    string? prefix = ReadGamePrefixFromHeroicConfig(heroicConfig, appId);
+                                    string? prefix = ReadGamePrefixFromHeroicConfig(heroicConfig, appId, title);
                                     var (engine, estimated) = GameEngineDetector.Detect(installPath);
 
                                     discovered.Add(new GameInfo(
@@ -203,7 +203,7 @@ public class HeroicLinuxSource : IGameSource
 
                                     if (!string.IsNullOrWhiteSpace(exePath) && File.Exists(exePath))
                                     {
-                                        installPath = LutrisLinuxSource.InferInstallRoot(exePath);
+                                        installPath = GameEngineDetector.InferInstallRoot(exePath, folderName);
                                     }
                                     else if (!string.IsNullOrWhiteSpace(folderName) && Directory.Exists(folderName))
                                     {
@@ -225,7 +225,7 @@ public class HeroicLinuxSource : IGameSource
 
                                     if (!seenIdsInScope.Add(appId)) continue;
 
-                                    string? prefix = ReadGamePrefixFromHeroicConfig(heroicConfig, appId);
+                                    string? prefix = ReadGamePrefixFromHeroicConfig(heroicConfig, appId, title);
                                     var (engine, estimated) = GameEngineDetector.Detect(installPath);
 
                                     discovered.Add(new GameInfo(
@@ -299,7 +299,7 @@ public class HeroicLinuxSource : IGameSource
                                     string title = Path.GetFileName(installPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                                     if (string.IsNullOrWhiteSpace(title)) title = appId;
 
-                                    string? prefix = ReadGamePrefixFromHeroicConfig(heroicConfig, appId);
+                                    string? prefix = ReadGamePrefixFromHeroicConfig(heroicConfig, appId, title);
                                     var (engine, estimated) = GameEngineDetector.Detect(installPath);
 
                                     discovered.Add(new GameInfo(
@@ -336,18 +336,58 @@ public class HeroicLinuxSource : IGameSource
         }, cancellationToken);
     }
 
-    private static string? ReadGamePrefixFromHeroicConfig(string heroicConfig, string gameId)
+    private static string? ReadGamePrefixFromHeroicConfig(string heroicConfig, string gameId, string? title = null)
     {
         string gameConfig = Path.Combine(heroicConfig, "GamesConfig", $"{gameId}.json");
-        if (!File.Exists(gameConfig)) return null;
-        try
+        if (File.Exists(gameConfig))
         {
-            return ReadWinePrefix(File.ReadAllText(gameConfig), gameId);
+            try
+            {
+                string? perGame = ReadWinePrefix(File.ReadAllText(gameConfig), gameId);
+                if (!string.IsNullOrWhiteSpace(perGame))
+                    return perGame;
+            }
+            catch { }
         }
-        catch
+
+        string globalConfig = Path.Combine(heroicConfig, "config.json");
+        if (File.Exists(globalConfig))
         {
-            return null;
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(globalConfig));
+                if (doc.RootElement.TryGetProperty("defaultSettings", out var ds) && ds.ValueKind == JsonValueKind.Object)
+                {
+                    string? baseDir = ds.TryGetProperty("defaultWinePrefix", out var dwp) && dwp.ValueKind == JsonValueKind.String
+                        ? dwp.GetString()
+                        : ds.TryGetProperty("defaultWinePrefixDir", out var dwpd) && dwpd.ValueKind == JsonValueKind.String
+                            ? dwpd.GetString()
+                            : null;
+
+                    if (!string.IsNullOrWhiteSpace(baseDir) && !string.IsNullOrWhiteSpace(title))
+                    {
+                        foreach (var cand in new[]
+                        {
+                            Path.Combine(baseDir, title),
+                            Path.Combine(baseDir, "default", title)
+                        })
+                        {
+                            if (Directory.Exists(cand))
+                                return cand;
+                        }
+                    }
+
+                    if (ds.TryGetProperty("winePrefix", out var sharedWp) && sharedWp.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(sharedWp.GetString()))
+                    {
+                        return sharedWp.GetString();
+                    }
+                }
+            }
+            catch { }
         }
+
+        return null;
     }
 
     /// <summary>The game's Wine prefix from its Heroic config file. Heroic keeps the game's settings under a key named
