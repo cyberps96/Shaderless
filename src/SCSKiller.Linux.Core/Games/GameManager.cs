@@ -277,12 +277,18 @@ public class GameManager
             int newRecorded = 0;
             try
             {
+                bool isRunning = false;
+                try { isRunning = ProtonRunner.IsGameRunning(g); } catch { }
+
                 recorder = RecorderManager.IsInstalled(g);
-                if (!recorder && settings.AutoRecordAllGames && !settings.IsAutoRecordDisabledForGame(g.Id))
+                if (!isRunning && !recorder && settings.AutoRecordAllGames && !settings.IsAutoRecordDisabledForGame(g.Id))
                 {
                     recorder = RecorderManager.TryAutoInstall(g);
                 }
-                RecorderManager.Import(g);   // a finished session's inbox (skipped while the game holds it)
+                if (!isRunning)
+                {
+                    RecorderManager.Import(g);   // a finished session's inbox (never imported while the game runs)
+                }
                 recorded = RecorderManager.RecordedPsos(g);
                 newRecorded = RecorderManager.UnwarmedRecordedPsos(g);
             }
@@ -298,7 +304,8 @@ public class GameManager
                 RecorderInstalled = recorder,
                 RecordedPsos = recorded,
                 StaleReason = staleReason,
-                NewRecordedPsos = newRecorded
+                NewRecordedPsos = newRecorded,
+                CompileNote = state is CacheState.Cached or CacheState.Outdated ? RecorderManager.LoadCompileNote(g.Id) : null
             });
         }
 

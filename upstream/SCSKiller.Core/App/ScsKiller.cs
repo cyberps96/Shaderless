@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -4266,7 +4266,7 @@ public sealed partial class ScsKiller : IScsKiller
     {
         Directory.CreateDirectory(Store.GameDir(id));
         try { return new FileStream(Path.Combine(Store.GameDir(id), "compile.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-        catch (IOException e) when ((e.HResult & 0xFFFF) is 32 or 33) { return null; }   // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+        catch (IOException e) when (AppStore.IsFileLockContention(e)) { return null; }   // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION, EAGAIN
     }
 
     /// <summary>The index, plan and materialize buffers are garbage once the queue is done: give the memory back to

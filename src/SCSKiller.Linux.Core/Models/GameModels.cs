@@ -52,7 +52,8 @@ public record GameInfo(
     string? GlCachePath = null,   // Lutris: the folder its __GL_SHADER_DISK_CACHE_PATH points to for this game (the driver adds /GLCache)
     bool IsFlatpak = false,
     string? StaleReason = null,
-    int NewRecordedPsos = 0
+    int NewRecordedPsos = 0,
+    string? CompileNote = null   // e.g. a DX12 compile made without a recording: "Partial: ... ● Record ... Re-Compile"
 )
 {
     public string RawId => Id.StartsWith("flatpak_", StringComparison.OrdinalIgnoreCase) ? Id["flatpak_".Length..] : Id;

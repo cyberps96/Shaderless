@@ -781,7 +781,8 @@ public class ProtonRunner
         CancellationToken cancellationToken = default,
         bool isIncrementalRun = false,
         int maxItemsPerBatch = MaxPipelinesPerWarmerBatch,
-        long maxNvidiaPartBytes = DefaultMaxNvidiaPartBytes)
+        long maxNvidiaPartBytes = DefaultMaxNvidiaPartBytes,
+        bool preserveExistingCache = false)
     {
         string recDbPath = Path.Combine(workDir, "shaderless.db");
         string genDbPath = Path.Combine(workDir, "shaderless_gen.db");
@@ -875,7 +876,8 @@ public class ProtonRunner
                                 cancellationToken,
                                 isIncrementalRun: isFirstBatch ? isIncrementalRun : true,
                                 startAt: slice.SkipPrefixCount,
-                                maxNvidiaPartBytes: maxNvidiaPartBytes);
+                                maxNvidiaPartBytes: maxNvidiaPartBytes,
+                                preserveExistingCache: preserveExistingCache);
 
                             cumulativeProcessed += batchLastProcessed;
                             cumulativeSucceeded += batchLastSucceeded;
@@ -923,7 +925,8 @@ public class ProtonRunner
             cancellationToken,
             isIncrementalRun,
             startAt: 0,
-            maxNvidiaPartBytes: maxNvidiaPartBytes);
+            maxNvidiaPartBytes: maxNvidiaPartBytes,
+            preserveExistingCache: preserveExistingCache);
     }
 
     private static async Task<bool> RunSingleWarmerPassAsync(
@@ -933,7 +936,8 @@ public class ProtonRunner
         CancellationToken cancellationToken,
         bool isIncrementalRun,
         int startAt,
-        long maxNvidiaPartBytes)
+        long maxNvidiaPartBytes,
+        bool preserveExistingCache = false)
     {
         string? warmerExe = FindWarmerBinary();
         if (warmerExe == null)
@@ -1011,12 +1015,13 @@ public class ProtonRunner
         string mesaCache = targetCachePath;
         Directory.CreateDirectory(mesaCache);
 
-        string exeName = !string.IsNullOrEmpty(game.ExecutablePath) && game.ExecutablePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? Path.GetFileName(game.ExecutablePath)
+        string? resolvedExePath = SCSKiller.Linux.Core.Games.GameEngineDetector.ResolveRealGameExecutable(game.InstallPath, game.ExecutablePath) ?? game.ExecutablePath;
+        string exeName = !string.IsNullOrEmpty(resolvedExePath) && resolvedExePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetFileName(resolvedExePath)
             : "game.exe";
 
         // If the game ships with Agility SDK D3D12 directory, link it into workDir
-        string? gameExeDir = !string.IsNullOrEmpty(game.ExecutablePath) ? Path.GetDirectoryName(game.ExecutablePath) : null;
+        string? gameExeDir = !string.IsNullOrEmpty(resolvedExePath) ? Path.GetDirectoryName(resolvedExePath) : null;
         string workD3D12 = Path.Combine(workDir, "D3D12");
         if (!string.IsNullOrEmpty(gameExeDir))
         {
@@ -1040,7 +1045,7 @@ public class ProtonRunner
         bool hasAntiCheat = SCSKiller.Linux.Core.Games.RecorderManager.DetectAntiCheat(game) != SCSKiller.Core.AntiCheat.None;
 
         // Prepare existing driver caches so incremental runs append to multi-part read-only caches while full runs start clean
-        PrepareDriverCachesForWarmer(targetCachePath, vkd3dCache, glCache, protonPath, workDir, isIncrementalRun, hasAntiCheat ? null : gameExeDir, maxNvidiaPartBytes);
+        PrepareDriverCachesForWarmer(targetCachePath, vkd3dCache, glCache, protonPath, workDir, isIncrementalRun, hasAntiCheat ? null : gameExeDir, maxNvidiaPartBytes, hasAntiCheat ? null : game.InstallPath, preserveExistingCache);
 
         // Copy warmer binary to match the game's executable name so VKD3D-Proton and drivers key the cache identically
         string targetExe = Path.Combine(workDir, exeName);
@@ -1168,7 +1173,7 @@ public class ProtonRunner
             await process.WaitForExitAsync(cancellationToken);
 
             // Games with anti-cheat: leave the game's folder untouched (no vkd3d-proton.cache copied next to the exe)
-            FinalizeDriverCaches(targetCachePath, vkd3dCache, glCache, hasAntiCheat ? null : gameExeDir, maxNvidiaPartBytes);
+            FinalizeDriverCaches(targetCachePath, vkd3dCache, glCache, hasAntiCheat ? null : gameExeDir, maxNvidiaPartBytes, hasAntiCheat ? null : game.InstallPath);
             InstallCachesWhereGameReads(game, vkd3dCache, glCache);
 
             try
@@ -1638,7 +1643,9 @@ public class ProtonRunner
         string workDir,
         bool isIncrementalRun = false,
         string? gameExeDir = null,
-        long maxNvidiaPartBytes = DefaultMaxNvidiaPartBytes)
+        long maxNvidiaPartBytes = DefaultMaxNvidiaPartBytes,
+        string? gameInstallPath = null,
+        bool preserveExistingCache = false)
     {
         try
         {
@@ -1671,8 +1678,10 @@ public class ProtonRunner
 
             File.WriteAllText(stampFile, currentStamp);
 
-            // A full compile (!isIncrementalRun) or runtime stamp change must start from a clean cache.
-            bool resetCache = stampChanged || !isIncrementalRun;
+            // A runtime stamp change (driver / Proton) always starts from a clean cache. A full compile (!isIncrementalRun)
+            // does too, unless the caller asks to keep what is already compiled for this same runtime (preserveExistingCache:
+            // e.g. a compile planned from a new recording after a compile from the game files, whose cache still helps).
+            bool resetCache = stampChanged || (!isIncrementalRun && !preserveExistingCache);
 
             if (Directory.Exists(glCache))
             {
@@ -1716,13 +1725,13 @@ public class ProtonRunner
                     {
                         try { File.Delete(cacheFile); } catch { }
                     }
-                    if (!string.IsNullOrEmpty(gameExeDir) && Directory.Exists(gameExeDir))
+                    foreach (var workCacheDir in GetGameVkd3dWorkingDirs(gameInstallPath, gameExeDir))
                     {
                         try
                         {
-                            string exeCache = Path.Combine(gameExeDir, "vkd3d-proton.cache");
+                            string exeCache = Path.Combine(workCacheDir, "vkd3d-proton.cache");
                             if (File.Exists(exeCache)) File.Delete(exeCache);
-                            string exeCacheWrite = Path.Combine(gameExeDir, "vkd3d-proton.cache.write");
+                            string exeCacheWrite = Path.Combine(workCacheDir, "vkd3d-proton.cache.write");
                             if (File.Exists(exeCacheWrite)) File.Delete(exeCacheWrite);
                         }
                         catch { }
@@ -1770,7 +1779,8 @@ public class ProtonRunner
         string vkd3dCache,
         string glCache,
         string? gameExeDir = null,
-        long maxNvidiaPartBytes = DefaultMaxNvidiaPartBytes)
+        long maxNvidiaPartBytes = DefaultMaxNvidiaPartBytes,
+        string? gameInstallPath = null)
     {
         // 1. Flatten nested GLCache/GLCache if NVIDIA driver created one
         try
@@ -1805,7 +1815,7 @@ public class ProtonRunner
         }
         catch { }
 
-        // 3. Promote VKD3D-Proton .cache.write files into finalized .cache files and sync to gameExeDir
+        // 3. Promote VKD3D-Proton .cache.write files into finalized .cache files and sync to gameExeDir (+ UE -basedir Binaries/Win64)
         try
         {
             if (Directory.Exists(vkd3dCache))
@@ -1827,7 +1837,24 @@ public class ProtonRunner
                     }
                 }
 
-                if (!string.IsNullOrEmpty(gameExeDir) && Directory.Exists(gameExeDir))
+                var workCacheDirs = GetGameVkd3dWorkingDirs(gameInstallPath, gameExeDir);
+                foreach (var workDir in workCacheDirs)
+                {
+                    // Also promote any runtime vkd3d-proton.cache.write left in the game's working directory
+                    string dirWrite = Path.Combine(workDir, "vkd3d-proton.cache.write");
+                    string dirFinal = Path.Combine(workDir, "vkd3d-proton.cache");
+                    if (File.Exists(dirWrite) && new FileInfo(dirWrite).Length > 48)
+                    {
+                        try
+                        {
+                            MergeOrReplaceVkd3dCache(dirWrite, dirFinal);
+                            File.Delete(dirWrite);
+                        }
+                        catch { }
+                    }
+                }
+
+                if (workCacheDirs.Count > 0)
                 {
                     var largestCache = Directory.GetFiles(vkd3dCache, "*.cache")
                         .Select(f => new FileInfo(f))
@@ -1836,22 +1863,60 @@ public class ProtonRunner
 
                     if (largestCache != null && largestCache.Length > 48)
                     {
-                        try
+                        foreach (var workDir in workCacheDirs)
                         {
-                            string gameCachePath = Path.Combine(gameExeDir, "vkd3d-proton.cache");
-                            MergeOrReplaceVkd3dCache(largestCache.FullName, gameCachePath);
-                            // Keep the shadercache copy in sync with the merged gameExeDir copy so future incremental runs don't re-append
-                            if (File.Exists(gameCachePath) && new FileInfo(gameCachePath).Length > largestCache.Length)
+                            try
                             {
-                                File.Copy(gameCachePath, largestCache.FullName, overwrite: true);
+                                string gameCachePath = Path.Combine(workDir, "vkd3d-proton.cache");
+                                MergeOrReplaceVkd3dCache(largestCache.FullName, gameCachePath);
+                                // Keep the shadercache copy in sync with the merged working-dir copy so future incremental runs don't re-append
+                                if (File.Exists(gameCachePath) && new FileInfo(gameCachePath).Length > largestCache.Length)
+                                {
+                                    File.Copy(gameCachePath, largestCache.FullName, overwrite: true);
+                                    largestCache.Refresh();
+                                }
                             }
+                            catch { }
                         }
-                        catch { }
                     }
                 }
             }
         }
         catch { }
+    }
+
+    /// <summary>Returns all directories where VKD3D-Proton may read/write a relative vkd3d-proton.cache for the game:
+    /// the resolved executable directory, plus any Unreal &lt;Project&gt;/Binaries/Win64 working directory when the exe sits
+    /// elsewhere (e.g. Phantom Blade Zero launching platform/steam/PBZ.exe with -basedir=../ProjectPBZ/Binaries/Win64).</summary>
+    internal static IReadOnlyList<string> GetGameVkd3dWorkingDirs(string? installPath, string? gameExeDir)
+    {
+        var dirs = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddIfExists(string? candidate)
+        {
+            if (string.IsNullOrEmpty(candidate) || !Directory.Exists(candidate)) return;
+            string full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+            if (seen.Add(full)) dirs.Add(full);
+        }
+
+        AddIfExists(gameExeDir);
+
+        if (!string.IsNullOrEmpty(installPath) && Directory.Exists(installPath) && !string.IsNullOrEmpty(gameExeDir))
+        {
+            try
+            {
+                foreach (var sub in Directory.EnumerateDirectories(installPath))
+                {
+                    if (Path.GetFileName(sub).Equals("Engine", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    AddIfExists(Path.Combine(sub, "Binaries", "Win64"));
+                }
+            }
+            catch { }
+        }
+
+        return dirs;
     }
 
     public static void FinalizeGameDriverCaches(GameInfo game)
@@ -1867,11 +1932,11 @@ public class ProtonRunner
             string vkd3dCache = Path.Combine(targetCachePath, "VKD3D_shader_cache");
             string glCache = Path.Combine(targetCachePath, "nvidiav1", "GLCache");
             bool hasAntiCheat = SCSKiller.Linux.Core.Games.RecorderManager.DetectAntiCheat(game) != SCSKiller.Core.AntiCheat.None;
-            string? gameExeDir = !hasAntiCheat && !string.IsNullOrEmpty(game.ExecutablePath)
-                ? Path.GetDirectoryName(game.ExecutablePath)
+            string? gameExeDir = !hasAntiCheat
+                ? SCSKiller.Linux.Core.Games.RecorderManager.ExeDir(game)
                 : null;
 
-            FinalizeDriverCaches(targetCachePath, vkd3dCache, glCache, gameExeDir);
+            FinalizeDriverCaches(targetCachePath, vkd3dCache, glCache, gameExeDir, DefaultMaxNvidiaPartBytes, hasAntiCheat ? null : game.InstallPath);
             InstallCachesWhereGameReads(game, vkd3dCache, glCache);
         }
         catch { }
@@ -2027,7 +2092,7 @@ public class ProtonRunner
     [ThreadStatic]
     private static byte[]? t_statxBuf;
 
-    private static bool TryGetLinuxFileIdentity(string filePath, out (uint DevMajor, uint DevMinor, ulong Ino) id, out long sizeBytes)
+    internal static bool TryGetLinuxFileIdentity(string filePath, out (uint DevMajor, uint DevMinor, ulong Ino) id, out long sizeBytes)
     {
         id = default;
         sizeBytes = 0;

@@ -28,7 +28,12 @@ public static class GameEngineDetector
         "WebView2",
         "D3D12StateObjectCompiler",
         "d3dconfig",
-        "7za.exe",
+        "7za",
+        "7z.exe",
+        "8za",
+        "crashpad",
+        "CheckEnv",
+        "UEPrereq",
         "REDprelauncher",
         "ErrorReporter",
         "InstallerMessage",
@@ -127,6 +132,26 @@ public static class GameEngineDetector
             if (root != null && Directory.Exists(Path.Combine(root.FullName, "Engine")))
                 return root.FullName;
             return project.FullName;
+        }
+
+        // 1b. Non-standard Unreal store sub-folders: e.g. <Root>/platform/steam/PBZ.exe or <Root>/steam/PBZ.exe where <Root>/Engine exists
+        var storeCheck = new DirectoryInfo(startDir);
+        if (storeCheck.Parent != null &&
+            storeCheck.Name is "steam" or "epic" or "gog" or "win64" or "Steam" or "Epic" or "GOG")
+        {
+            if (storeCheck.Parent.Name.Equals("platform", StringComparison.OrdinalIgnoreCase) &&
+                storeCheck.Parent.Parent != null &&
+                !IsBoundaryDirectory(storeCheck.Parent.Parent) &&
+                Directory.Exists(Path.Combine(storeCheck.Parent.Parent.FullName, "Engine")))
+            {
+                return storeCheck.Parent.Parent.FullName;
+            }
+
+            if (!IsBoundaryDirectory(storeCheck.Parent) &&
+                Directory.Exists(Path.Combine(storeCheck.Parent.FullName, "Engine")))
+            {
+                return storeCheck.Parent.FullName;
+            }
         }
 
         // 2. Multi-level binary sub-folder layouts: e.g. Bin/Win64SharedMasterSteamPGO, bin/x64_dx12, win64, x64/Release
@@ -377,6 +402,9 @@ public static class GameEngineDetector
                 catch { return 0; }
             }
 
+            var largestOverall = pool.OrderByDescending(SafeFileLength).First();
+            long largestBytes = SafeFileLength(largestOverall);
+
             var shippingExe = pool
                 .Where(f => f.Contains("Shipping", StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(SafeFileLength)
@@ -389,9 +417,16 @@ public static class GameEngineDetector
                 .OrderByDescending(SafeFileLength)
                 .FirstOrDefault();
 
+            // Prevent small utilities left inside Binaries/Win64 from beating a much larger real game executable
+            // (e.g. Phantom Blade Zero's 488 MB platform/steam/PBZ.exe vs 5 MB Binaries/Win64 helpers).
+            if (x64Exe != null && largestBytes > 0 && SafeFileLength(x64Exe) < largestBytes / 4)
+            {
+                x64Exe = null;
+            }
+
             string candidate = shippingExe
                 ?? x64Exe
-                ?? pool.OrderByDescending(SafeFileLength).First();
+                ?? largestOverall;
 
             try
             {
@@ -407,5 +442,48 @@ public static class GameEngineDetector
         {
             return null;
         }
+    }
+
+    /// <summary>Resolves the actual game process executable (upgrading small bootstrapper stubs or misconfigured helper exes
+    /// to either the Unreal Shipping exe or a substantially larger main executable in <paramref name="installPath"/>).</summary>
+    public static string? ResolveRealGameExecutable(string installPath, string? configuredExe)
+    {
+        string? exe = configuredExe;
+        if (string.IsNullOrEmpty(exe) || !File.Exists(exe))
+            return FindExecutable(installPath) ?? configuredExe;
+
+        try
+        {
+            string resolved = SCSKiller.Core.Games.GameFiles.GameExe(installPath, exe);
+            if (!string.IsNullOrEmpty(resolved) && File.Exists(resolved))
+                exe = resolved;
+        }
+        catch { }
+
+        if (exe.Contains("Shipping", StringComparison.OrdinalIgnoreCase))
+            return exe;
+
+        try
+        {
+            string fileName = Path.GetFileName(exe);
+            bool isIgnoredHelper = IgnoredExeSubstrings.Any(ig => fileName.Contains(ig, StringComparison.OrdinalIgnoreCase));
+            long currentLen = new FileInfo(exe).Length;
+
+            // If the configured exe is a known helper or a small (< 10 MB) bootstrapper stub (like PBZ's 1.1 MB steam/PBZ.exe),
+            // check if FindExecutable locates the real main game binary (>= 25 MB and >= 4x larger).
+            if (isIgnoredHelper || currentLen < 10L * 1024 * 1024)
+            {
+                string? discovered = FindExecutable(installPath);
+                if (!string.IsNullOrEmpty(discovered) && File.Exists(discovered))
+                {
+                    long discoveredLen = new FileInfo(discovered).Length;
+                    if (isIgnoredHelper || (discoveredLen >= 25L * 1024 * 1024 && discoveredLen >= currentLen * 4))
+                        return discovered;
+                }
+            }
+        }
+        catch { }
+
+        return exe;
     }
 }

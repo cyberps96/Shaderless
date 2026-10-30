@@ -12,6 +12,7 @@ public sealed class GameExitMonitor : IDisposable
     private readonly Func<GameInfo, CancellationToken, Task> _onGameReadyToCompile;
     private readonly Func<GameInfo, CancellationToken, Task>? _onGameExited;
     private readonly Func<GameInfo, bool> _isGameRunning;
+    private readonly bool _hasCustomRunningCheck;
     private readonly HashSet<string> _runningGameIds = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _cts = new();
     private Task? _loopTask;
@@ -24,6 +25,7 @@ public sealed class GameExitMonitor : IDisposable
     {
         _getKnownGames = getKnownGames;
         _onGameReadyToCompile = onGameReadyToCompile;
+        _hasCustomRunningCheck = isGameRunning != null;
         _isGameRunning = isGameRunning ?? (g => ProtonRunner.IsGameRunning(g));
         _onGameExited = onGameExited;
     }
@@ -67,6 +69,25 @@ public sealed class GameExitMonitor : IDisposable
         return anyStillRunning ? Array.Empty<GameInfo>() : exited;
     }
 
+    /// <summary>Determines whether an exited game should trigger AutoCompileOnExit.
+    /// Checks <see cref="RecorderManager.UnwarmedRecordedPsos"/> directly so auto-compile still triggers even if a
+    /// concurrent UI scan already imported shaderless.db into recording.db (making <paramref name="newlyImported"/> 0)
+    /// and even when static UE5 warmed keys outnumber total recorded PSOs.</summary>
+    public static bool ShouldAutoCompileAfterExit(GameInfo exited, int newlyImported)
+    {
+        if (newlyImported > 0 || exited.State != CacheState.Cached)
+            return true;
+
+        if (RecorderManager.UnwarmedRecordedPsos(exited) > 0)
+            return true;
+
+        var warmedKeys = RecorderManager.LoadWarmedKeys(exited.Id);
+        if (warmedKeys.Count == 0 && RecorderManager.RecordedPsos(exited) > 0)
+            return true;
+
+        return false;
+    }
+
     private async Task MonitorLoopAsync(TimeSpan pollInterval, TimeSpan settleDelay, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -100,18 +121,11 @@ public sealed class GameExitMonitor : IDisposable
                         try { ProtonRunner.FinalizeGameDriverCaches(exited); } catch { }
 
                         int newlyImported = 0;
-                        try { newlyImported = RecorderManager.Import(exited); } catch { }
+                        try { newlyImported = RecorderManager.Import(exited, _hasCustomRunningCheck ? _isGameRunning : null); } catch { }
 
                         if (autoCompile)
                         {
-                            int totalRecorded = RecorderManager.RecordedPsos(exited);
-                            var warmedKeys = RecorderManager.LoadWarmedKeys(exited.Id);
-
-                            bool needsCompile = newlyImported > 0
-                                || exited.State != CacheState.Cached
-                                || (totalRecorded > 0 && totalRecorded > warmedKeys.Count);
-
-                            if (needsCompile)
+                            if (ShouldAutoCompileAfterExit(exited, newlyImported))
                             {
                                 await _onGameReadyToCompile(exited, ct);
                                 continue;

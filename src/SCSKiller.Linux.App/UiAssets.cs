@@ -346,6 +346,9 @@ public static class UiAssets
       color: var(--text-muted);
       display: flex;
       justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      line-height: 1.4;
     }
 
     .card-actions {
@@ -1495,9 +1498,17 @@ public static class UiAssets
 
       pBox.style.display = 'flex';
       pFill.style.width = `${p.percentage}%`;
-      const actionColor = p.failed ? 'color: #f85149;' : (p.isComplete ? (p.cacheVerified === false ? 'color: #d29922;' : 'color: #3fb950;') : '');
+      const actionColor = p.failed ? '#f85149' : (p.isComplete ? (p.cacheVerified === false ? '#d29922' : '#3fb950') : '');
       const rightLabel = p.isComplete ? (p.failed ? '✗ Failed' : '✓ Done') : `${p.percentage}%`;
-      pText.innerHTML = `<span style="${actionColor}">${p.currentAction}</span><span style="${actionColor}">${rightLabel}</span>`;
+      pText.innerHTML = '';
+      const leftSpan = document.createElement('span');
+      leftSpan.style.cssText = 'flex: 1; min-width: 0; overflow-wrap: anywhere;' + (actionColor ? ` color: ${actionColor};` : '');
+      leftSpan.textContent = p.currentAction || '';
+      const rightSpan = document.createElement('span');
+      rightSpan.style.cssText = 'white-space: nowrap; flex-shrink: 0; font-weight: 600;' + (actionColor ? ` color: ${actionColor};` : '');
+      rightSpan.textContent = rightLabel;
+      pText.appendChild(leftSpan);
+      pText.appendChild(rightSpan);
 
       if (p.isComplete) {
         btn.disabled = false;
@@ -1601,6 +1612,11 @@ public static class UiAssets
               <span>Recorded Pipelines:</span>
               <strong style="${g.recordedPsos > 0 ? 'color: #bc8cff;' : ''}">${(g.recordedPsos || 0).toLocaleString()}${newRecBadge}${g.recorderInstalled ? ' • recording' : ''}</strong>
             </div>
+
+            ${g.compileNote && (isCached || isStale) ? `
+            <div class="meta-row" style="justify-content: flex-start; color: #d29922; font-size: 12px; line-height: 1.4;" title="${escapeHtml(g.compileNote)}">
+              <span>⚠ ${escapeHtml(g.compileNote)}</span>
+            </div>` : ''}
 
             <div class="progress-box">
               <div class="progress-track"><div class="progress-fill"></div></div>

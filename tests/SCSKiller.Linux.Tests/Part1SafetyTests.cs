@@ -2056,8 +2056,388 @@ print(json.dumps({
     }
 
     [TestMethod]
-    public void ReleaseVersion_Is022Beta()
+    public async Task RecordingsLock_WaitsCleanlyOnLinuxContention_InsteadOfThrowingImmediately()
     {
-        Assert.AreEqual("0.2.2-beta", SCSKiller.Linux.Core.AppPaths.Version);
+        string tempDir = Path.Combine(Path.GetTempPath(), "shaderless-lock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string storePath = Path.Combine(tempDir, "recording.db");
+
+        try
+        {
+            using var acquiredOnThread1 = new ManualResetEventSlim(false);
+            using var releaseThread1 = new ManualResetEventSlim(false);
+
+            var t1 = Task.Factory.StartNew(() =>
+            {
+                using (SCSKiller.Core.App.Recordings.Lock(storePath, TimeSpan.FromSeconds(3)))
+                {
+                    acquiredOnThread1.Set();
+                    releaseThread1.Wait(TimeSpan.FromSeconds(5));
+                }
+            }, TaskCreationOptions.LongRunning);
+
+            Assert.IsTrue(acquiredOnThread1.Wait(TimeSpan.FromSeconds(3)));
+
+            var t2 = Task.Factory.StartNew(() =>
+            {
+                using (SCSKiller.Core.App.Recordings.Lock(storePath, TimeSpan.FromSeconds(3)))
+                {
+                    return true;
+                }
+            }, TaskCreationOptions.LongRunning);
+
+            await Task.Delay(80);
+            Assert.IsFalse(t2.IsCompleted, "Second holder must wait while first holder holds recording.db.lock.");
+
+            releaseThread1.Set();
+            await t1;
+            Assert.IsTrue(await t2, "Second holder must acquire recording.db.lock cleanly on Linux once first holder releases it.");
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public void RecorderManager_Import_SkipsWhileGameIsRunning_OrFileOpenInProcFd()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "shaderless-runimport-" + Guid.NewGuid().ToString("N"));
+        string dataDir = Path.Combine(tempDir, "data");
+        string gameDir = Path.Combine(tempDir, "game");
+        string symlinkGameDir = Path.Combine(tempDir, "game-link");
+        string fakeProcDir = Path.Combine(tempDir, "proc");
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(gameDir);
+        Directory.CreateDirectory(fakeProcDir);
+        File.CreateSymbolicLink(symlinkGameDir, gameDir);
+
+        string? prevDataOverride = SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride;
+        try
+        {
+            SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride = dataDir;
+
+            string exePath = Path.Combine(gameDir, "ValorMortis-Win64-Shipping.exe");
+            File.WriteAllBytes(exePath, new byte[64]);
+            string inboxPath = Path.Combine(gameDir, "shaderless.db");
+
+            var pso = new SCSKiller.Core.Planning.PsoDb.Rec('C', new byte[] { 11, 22, 33, 44 });
+            using (var fs = File.Create(inboxPath))
+            {
+                SCSKiller.Core.Planning.PsoDb.Write(fs, pso.Tag, pso.Payload);
+            }
+            long initialInboxLen = new FileInfo(inboxPath).Length;
+            Assert.IsTrue(initialInboxLen > 0);
+
+            var game = MakeGame("2828710_test", GameSource.Steam, gameDir, exePath);
+
+            // 1. Game is running -> Import must skip without touching shaderless.db or creating recording.db
+            int importedWhileRunning = SCSKiller.Linux.Core.Games.RecorderManager.Import(game, isGameRunning: _ => true);
+            Assert.AreEqual(0, importedWhileRunning);
+            Assert.AreEqual(initialInboxLen, new FileInfo(inboxPath).Length, "shaderless.db must not be truncated while game is running.");
+            Assert.IsFalse(File.Exists(SCSKiller.Linux.Core.Games.RecorderManager.RecordingPath(game.Id)));
+
+            // 2. /proc/<pid>/fd open-handle detection (including symlinked parent directory path)
+            Directory.CreateDirectory(Path.Combine(fakeProcDir, "100", "fd"));
+            File.CreateSymbolicLink(Path.Combine(fakeProcDir, "100", "fd", "3"), inboxPath);
+            Assert.IsFalse(
+                SCSKiller.Linux.Core.Games.RecorderManager.IsFileOpenByExternalProcess(inboxPath, fakeProcDir, selfPid: 100),
+                "Shaderless's own PID must be ignored.");
+
+            Directory.CreateDirectory(Path.Combine(fakeProcDir, "200", "fd"));
+            File.CreateSymbolicLink(
+                Path.Combine(fakeProcDir, "200", "fd", "7"),
+                Path.Combine(symlinkGameDir, "shaderless.db"));
+            Assert.IsTrue(
+                SCSKiller.Linux.Core.Games.RecorderManager.IsFileOpenByExternalProcess(inboxPath, fakeProcDir, selfPid: 100),
+                "External process holding shaderless.db open (even via symlink path) must be detected.");
+
+            // 3. Game exited -> Import merges cleanly and rotates inbox to 0 bytes
+            int importedAfterExit = SCSKiller.Linux.Core.Games.RecorderManager.Import(game, isGameRunning: _ => false);
+            Assert.AreEqual(1, importedAfterExit);
+            Assert.AreEqual(0L, new FileInfo(inboxPath).Length);
+            Assert.AreEqual(1, SCSKiller.Linux.Core.Games.RecorderManager.RecordedPsos(game));
+        }
+        finally
+        {
+            SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride = prevDataOverride;
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public async Task GameExitMonitor_AutoCompiles_EvenWhenUiScanAlreadyImportedInbox_AndStaticWarmedKeysOutnumberRecorded()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "shaderless-exitrace-" + Guid.NewGuid().ToString("N"));
+        string dataDir = Path.Combine(tempDir, "data");
+        string gameDir = Path.Combine(tempDir, "game");
+        Directory.CreateDirectory(dataDir);
+        Directory.CreateDirectory(gameDir);
+
+        string settingsPath = Path.Combine(tempDir, "settings.json");
+        string? prevSettingsOverride = SCSKiller.Linux.Core.SettingsManager.TestSettingsPathOverride;
+        string? prevDataOverride = SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride;
+
+        try
+        {
+            SCSKiller.Linux.Core.SettingsManager.TestSettingsPathOverride = settingsPath;
+            SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride = dataDir;
+            SCSKiller.Linux.Core.SettingsManager.Save(new AppSettings(AutoRecordAllGames: false, AutoCompileOnExit: true));
+
+            string exePath = Path.Combine(gameDir, "ValorMortis-Win64-Shipping.exe");
+            File.WriteAllBytes(exePath, new byte[64]);
+            var cachedGame = MakeGame("2828710_race", GameSource.Steam, gameDir, exePath) with
+            {
+                State = CacheState.Cached,
+                CompiledShadersCount = 10
+            };
+
+            // Simulate 2 recorded PSOs already merged into recording.db by a background UI scan (shaderless.db already emptied -> newlyImported == 0):
+            // psoOld is warmed, psoNew is NOT warmed yet, while warmed-keys.txt has 10 keys total (static UE5 + old recorded) > 2 total recorded!
+            var psoOld = new SCSKiller.Core.Planning.PsoDb.Rec('C', new byte[] { 1, 1, 1, 1 });
+            var psoNew = new SCSKiller.Core.Planning.PsoDb.Rec('C', new byte[] { 2, 2, 2, 2 });
+            string inboxPath = Path.Combine(gameDir, "shaderless.db");
+            using (var fs = File.Create(inboxPath))
+            {
+                SCSKiller.Core.Planning.PsoDb.Write(fs, psoOld.Tag, psoOld.Payload);
+                SCSKiller.Core.Planning.PsoDb.Write(fs, psoNew.Tag, psoNew.Payload);
+            }
+            Assert.AreEqual(2, SCSKiller.Linux.Core.Games.RecorderManager.Import(cachedGame, isGameRunning: _ => false));
+            Assert.AreEqual(0L, new FileInfo(inboxPath).Length);
+
+            var warmedSet = new List<string> { psoOld.Key };
+            for (int i = 0; i < 9; i++)
+                warmedSet.Add($"{i:x40}");
+            SCSKiller.Linux.Core.Games.RecorderManager.SaveWarmedKeys(cachedGame, warmedSet, "615.78.08|proton");
+
+            Assert.AreEqual(2, SCSKiller.Linux.Core.Games.RecorderManager.RecordedPsos(cachedGame));
+            Assert.AreEqual(10, SCSKiller.Linux.Core.Games.RecorderManager.LoadWarmedKeys(cachedGame.Id).Count);
+            Assert.AreEqual(1, SCSKiller.Linux.Core.Games.RecorderManager.UnwarmedRecordedPsos(cachedGame));
+
+            bool isRunning = true;
+            var compileSignal = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            using (var monitor = new SCSKiller.Linux.Core.Games.GameExitMonitor(
+                () => new[] { cachedGame },
+                onGameReadyToCompile: (exited, _) =>
+                {
+                    compileSignal.TrySetResult(exited.Id);
+                    return Task.CompletedTask;
+                },
+                isGameRunning: _ => Volatile.Read(ref isRunning)))
+            {
+                monitor.Start(pollInterval: TimeSpan.FromMilliseconds(35), settleDelay: TimeSpan.FromMilliseconds(35));
+                await Task.Delay(110);
+                Volatile.Write(ref isRunning, false);
+
+                var completed = await Task.WhenAny(compileSignal.Task, Task.Delay(3000));
+                Assert.AreSame(compileSignal.Task, completed, "AutoCompileOnExit must trigger when UnwarmedRecordedPsos > 0 even if newlyImported == 0 and warmedKeys.Count > totalRecorded.");
+                Assert.AreEqual(cachedGame.Id, await compileSignal.Task);
+            }
+
+            // Now mark psoNew as warmed too -> UnwarmedRecordedPsos becomes 0 -> exiting again must NOT re-trigger compile
+            SCSKiller.Linux.Core.Games.RecorderManager.SaveWarmedKeys(cachedGame, new[] { psoNew.Key }, "615.78.08|proton");
+            Assert.AreEqual(0, SCSKiller.Linux.Core.Games.RecorderManager.UnwarmedRecordedPsos(cachedGame));
+            Assert.IsFalse(SCSKiller.Linux.Core.Games.GameExitMonitor.ShouldAutoCompileAfterExit(cachedGame, newlyImported: 0));
+        }
+        finally
+        {
+            SCSKiller.Linux.Core.SettingsManager.TestSettingsPathOverride = prevSettingsOverride;
+            SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride = prevDataOverride;
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public void PhantomBladeZeroLayout_ResolvesMainPlatformSteamExe_AndSyncsBaseDirVkd3dCache()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "shaderless-pbz-" + Guid.NewGuid().ToString("N"));
+        string installDir = Path.Combine(root, "PBZ");
+        string engineWin64 = Path.Combine(installDir, "Engine", "Binaries", "Win64");
+        string projWin64 = Path.Combine(installDir, "ProjectPBZ", "Binaries", "Win64");
+        string steamStubDir = Path.Combine(installDir, "steam");
+        string platformSteamDir = Path.Combine(installDir, "platform", "steam");
+        string targetCache = Path.Combine(root, "shadercache");
+        string vkd3dCache = Path.Combine(targetCache, "VKD3D_shader_cache");
+        string glCache = Path.Combine(targetCache, "nvidiav1", "GLCache");
+
+        Directory.CreateDirectory(engineWin64);
+        Directory.CreateDirectory(projWin64);
+        Directory.CreateDirectory(steamStubDir);
+        Directory.CreateDirectory(platformSteamDir);
+        Directory.CreateDirectory(vkd3dCache);
+        Directory.CreateDirectory(glCache);
+
+        try
+        {
+            File.WriteAllBytes(Path.Combine(engineWin64, "EpicWebHelper.exe"), new byte[1024]);
+            File.WriteAllBytes(Path.Combine(projWin64, "8za_v2.exe"), new byte[5 * 1024 * 1024]);
+            File.WriteAllBytes(Path.Combine(projWin64, "CheckEnv.exe"), new byte[64 * 1024]);
+            File.WriteAllBytes(Path.Combine(projWin64, "crashpad_handler.exe"), new byte[2 * 1024 * 1024]);
+
+            string stubExe = Path.Combine(steamStubDir, "PBZ.exe");
+            File.WriteAllBytes(stubExe, new byte[1 * 1024 * 1024]);
+
+            string mainExe = Path.Combine(platformSteamDir, "PBZ.exe");
+            using (var fs = File.Create(mainExe))
+            {
+                fs.SetLength(64L * 1024 * 1024);
+            }
+
+            // 1. FindExecutable & ResolveRealGameExecutable must pick platform/steam/PBZ.exe over 8za_v2.exe and steam/PBZ.exe
+            string? found = SCSKiller.Linux.Core.Games.GameEngineDetector.FindExecutable(installDir);
+            Assert.AreEqual(mainExe, found);
+            Assert.AreEqual(mainExe, SCSKiller.Linux.Core.Games.GameEngineDetector.ResolveRealGameExecutable(installDir, stubExe));
+            Assert.AreEqual(mainExe, SCSKiller.Linux.Core.Games.GameEngineDetector.ResolveRealGameExecutable(installDir, Path.Combine(projWin64, "8za_v2.exe")));
+            Assert.AreEqual(installDir, SCSKiller.Linux.Core.Games.GameEngineDetector.InferInstallRoot(mainExe));
+
+            // 2. RecorderManager.ExeDir must resolve to platform/steam so d3d12.dll is installed beside the 64-bit game binary
+            var pbzGame = MakeGame("4115450", GameSource.Steam, installDir, stubExe);
+            Assert.AreEqual(platformSteamDir, SCSKiller.Linux.Core.Games.RecorderManager.ExeDir(pbzGame));
+
+            // 3. FinalizeDriverCaches must promote runtime .cache.write in ProjectPBZ/Binaries/Win64 and sync vkd3d-proton.cache to BOTH platform/steam and ProjectPBZ/Binaries/Win64
+            byte[] header = Enumerable.Range(1, 48).Select(i => (byte)i).ToArray();
+            byte[] warmerPayload = new byte[] { 10, 20, 30, 40, 50, 60 };
+            File.WriteAllBytes(Path.Combine(vkd3dCache, "vkd3d-proton.PBZ.exe.cache"), header.Concat(warmerPayload).ToArray());
+
+            ProtonRunner.FinalizeDriverCaches(targetCache, vkd3dCache, glCache, platformSteamDir, ProtonRunner.DefaultMaxNvidiaPartBytes, installDir);
+
+            Assert.IsTrue(File.Exists(Path.Combine(platformSteamDir, "vkd3d-proton.cache")), "vkd3d-proton.cache must be synced next to platform/steam/PBZ.exe.");
+            Assert.IsTrue(File.Exists(Path.Combine(projWin64, "vkd3d-proton.cache")), "vkd3d-proton.cache must also be synced into ProjectPBZ/Binaries/Win64 (-basedir CWD).");
+        }
+        finally
+        {
+            try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public void FullCompile_KeepsExistingCache_WhenAskedAndRuntimeUnchanged_ButStillResetsOnProtonChange()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "shaderless-preserve-" + Guid.NewGuid().ToString("N"));
+        string targetCache = Path.Combine(root, "shadercache", "4115450");
+        string vkd3dCache = Path.Combine(targetCache, "VKD3D_shader_cache");
+        string glCache = Path.Combine(targetCache, "nvidiav1", "GLCache");
+        string glLeaf = Path.Combine(glCache, "ee579c6f9b8441af518e5e98be76e16b", "ca212eac8b1e670f");
+        string workDir = Path.Combine(root, "work");
+        string gameExeDir = Path.Combine(root, "game", "platform", "steam");
+        Directory.CreateDirectory(vkd3dCache);
+        Directory.CreateDirectory(glLeaf);
+        Directory.CreateDirectory(workDir);
+        Directory.CreateDirectory(gameExeDir);
+
+        try
+        {
+            File.WriteAllBytes(Path.Combine(workDir, "d3d12core.dll"), new byte[100]);
+            ProtonRunner.PrepareDriverCachesForWarmer(targetCache, vkd3dCache, glCache, "/proton-11.0/proton", workDir, isIncrementalRun: false, gameExeDir);
+
+            // The compile from the game files left its cache (merged + parts) and a vkd3d cache
+            string mergedBin = Path.Combine(glLeaf, "steamapp_merged_shader_cache.bin");
+            string part1Bin = Path.Combine(glLeaf, "shaderless_part1.bin");
+            string vkd3dFile = Path.Combine(vkd3dCache, "vkd3d-proton.PBZ.exe.cache");
+            File.WriteAllBytes(mergedBin, new byte[2048]);
+            File.WriteAllBytes(Path.Combine(glLeaf, "steamapp_merged_shader_cache.toc"), new byte[128]);
+            File.WriteAllBytes(part1Bin, new byte[1024]);
+            File.WriteAllBytes(Path.Combine(glLeaf, "shaderless_part1.toc"), new byte[64]);
+            File.WriteAllBytes(vkd3dFile, new byte[256]);
+
+            // A full compile planned from a new recording, same driver + Proton, asked to keep the cache: nothing deleted
+            ProtonRunner.PrepareDriverCachesForWarmer(targetCache, vkd3dCache, glCache, "/proton-11.0/proton", workDir,
+                isIncrementalRun: false, gameExeDir, preserveExistingCache: true);
+            Assert.IsTrue(File.Exists(mergedBin), "the compile from the game files must survive a full compile asked to keep it");
+            Assert.IsTrue(File.Exists(part1Bin));
+            Assert.IsTrue(File.Exists(vkd3dFile));
+
+            // Not asked to keep it: the old behaviour (full compiles never stack)
+            ProtonRunner.PrepareDriverCachesForWarmer(targetCache, vkd3dCache, glCache, "/proton-11.0/proton", workDir,
+                isIncrementalRun: false, gameExeDir, preserveExistingCache: false);
+            Assert.IsFalse(File.Exists(mergedBin));
+
+            // Asked to keep it, but Proton changed: the old cache can't match anymore, so it is reset
+            File.WriteAllBytes(mergedBin, new byte[2048]);
+            File.WriteAllBytes(part1Bin, new byte[1024]);
+            File.WriteAllBytes(vkd3dFile, new byte[256]);
+            ProtonRunner.PrepareDriverCachesForWarmer(targetCache, vkd3dCache, glCache, "/proton-cachyos/proton", workDir,
+                isIncrementalRun: false, gameExeDir, preserveExistingCache: true);
+            Assert.IsFalse(File.Exists(mergedBin), "a Proton change must reset even when asked to keep the cache");
+            Assert.IsFalse(File.Exists(part1Bin));
+            Assert.IsFalse(File.Exists(vkd3dFile));
+        }
+        finally
+        {
+            try { if (Directory.Exists(root)) Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public void ShouldPreserveExistingCache_OnlyForFullCompilesOnTheSameRuntime_UnderTheSizeCap()
+    {
+        const long GB = 1024L * 1024L * 1024L;
+        // PBZ: 13 GB compiled from the game files, 25 GB cap, then a compile planned from the recording (no overlap)
+        Assert.IsTrue(ShaderCompilerCoordinator.ShouldPreserveExistingCache(false, null, 13 * GB, 25 * GB));
+        // incremental compiles keep their cache through their own path
+        Assert.IsFalse(ShaderCompilerCoordinator.ShouldPreserveExistingCache(true, null, 13 * GB, 25 * GB));
+        // driver / Proton change or a truncated legacy cache: start clean
+        Assert.IsFalse(ShaderCompilerCoordinator.ShouldPreserveExistingCache(false, "driver updated", 13 * GB, 25 * GB));
+        Assert.IsFalse(ShaderCompilerCoordinator.ShouldPreserveExistingCache(false, "Proton updated", 13 * GB, 25 * GB));
+        Assert.IsFalse(ShaderCompilerCoordinator.ShouldPreserveExistingCache(false, "cache truncated", 13 * GB, 25 * GB));
+        // nothing to keep
+        Assert.IsFalse(ShaderCompilerCoordinator.ShouldPreserveExistingCache(false, null, 0, 25 * GB));
+        // already over 3/4 of the cap: start clean so the new compile fits
+        Assert.IsFalse(ShaderCompilerCoordinator.ShouldPreserveExistingCache(false, null, 20 * GB, 25 * GB));
+    }
+
+    [TestMethod]
+    public void PartialCompileNote_FollowsUpstreamPlannerCheck()
+    {
+        var none = SCSKiller.Core.AntiCheat.None;
+        // no recording + an engine whose root-signature rule no game confirmed (Phantom Blade Zero): partial
+        string? untested = ShaderCompilerCoordinator.PartialCompileNote(
+            new SCSKiller.Core.PlanCheck(SCSKiller.Core.Readiness.Ready, SCSKiller.Core.Planning.Planner.Untested), none);
+        StringAssert.Contains(untested, "Partial");
+        StringAssert.Contains(untested, "Record");
+        // a state-dependent cache without a recording (AMD): partial
+        Assert.IsNotNull(ShaderCompilerCoordinator.PartialCompileNote(
+            new SCSKiller.Core.PlanCheck(SCSKiller.Core.Readiness.NeedsRecording, SCSKiller.Core.Planning.Planner.Record), none));
+        // planned from a recording, a confirmed engine, or DirectX 11 only: nothing guessed, no note
+        Assert.IsNull(ShaderCompilerCoordinator.PartialCompileNote(
+            new SCSKiller.Core.PlanCheck(SCSKiller.Core.Readiness.Ready, "planned from a recording"), none));
+        Assert.IsNull(ShaderCompilerCoordinator.PartialCompileNote(
+            new SCSKiller.Core.PlanCheck(SCSKiller.Core.Readiness.Ready, SCSKiller.Core.Planning.Planner.NoRecording), none));
+        Assert.IsNull(ShaderCompilerCoordinator.PartialCompileNote(
+            new SCSKiller.Core.PlanCheck(SCSKiller.Core.Readiness.Ready, "compiles every DirectX 11 shader"), none));
+        Assert.IsNull(ShaderCompilerCoordinator.PartialCompileNote(null, none));
+        // anti-cheat: recording isn't possible, so the note doesn't tell the user to record
+        string? ac = ShaderCompilerCoordinator.PartialCompileNote(
+            new SCSKiller.Core.PlanCheck(SCSKiller.Core.Readiness.Ready, SCSKiller.Core.Planning.Planner.Untested), SCSKiller.Core.AntiCheat.EasyAntiCheat);
+        StringAssert.Contains(ac, "anti-cheat");
+        Assert.IsFalse(ac!.Contains("Turn on"));
+    }
+
+    [TestMethod]
+    public void CompileNote_RoundTrips_AndIsRemovedWhenNull()
+    {
+        string dataDir = Path.Combine(Path.GetTempPath(), "shaderless-note-" + Guid.NewGuid().ToString("N"));
+        SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride = dataDir;
+        try
+        {
+            Assert.IsNull(SCSKiller.Linux.Core.Games.RecorderManager.LoadCompileNote("6"));
+            SCSKiller.Linux.Core.Games.RecorderManager.SaveCompileNote("6", "Partial: compiled from the game's files only.");
+            Assert.AreEqual("Partial: compiled from the game's files only.", SCSKiller.Linux.Core.Games.RecorderManager.LoadCompileNote("6"));
+            SCSKiller.Linux.Core.Games.RecorderManager.SaveCompileNote("6", null);   // a later compile from a recording clears it
+            Assert.IsNull(SCSKiller.Linux.Core.Games.RecorderManager.LoadCompileNote("6"));
+            Assert.IsFalse(File.Exists(SCSKiller.Linux.Core.Games.RecorderManager.CompileNotePath("6")));
+        }
+        finally
+        {
+            SCSKiller.Linux.Core.Games.RecorderManager.TestDataDirOverride = null;
+            try { if (Directory.Exists(dataDir)) Directory.Delete(dataDir, true); } catch { }
+        }
+    }
+
+    [TestMethod]
+    public void ReleaseVersion_Is023Beta()
+    {
+        Assert.AreEqual("0.2.3-beta", SCSKiller.Linux.Core.AppPaths.Version);
     }
 }

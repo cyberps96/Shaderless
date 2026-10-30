@@ -1,5 +1,6 @@
 using SCSKiller.Core.App;
 using SCSKiller.Core.Planning;
+using SCSKiller.Linux.Core.Drivers;
 using SCSKiller.Linux.Core.Models;
 
 namespace SCSKiller.Linux.Core.Games;
@@ -10,9 +11,53 @@ namespace SCSKiller.Linux.Core.Games;
 /// imports it into games/&lt;id&gt;/recording.db and writes shaderless.keys back so nothing is recorded twice.</summary>
 public static class RecorderManager
 {
-    public static string DataDir => SCSKiller.Linux.Core.AppPaths.DataDir;
+    private static readonly AsyncLocal<string?> _testDataDirOverride = new();
+
+    internal static string? TestDataDirOverride
+    {
+        get => _testDataDirOverride.Value;
+        set => _testDataDirOverride.Value = value;
+    }
+
+    public static string DataDir =>
+        !string.IsNullOrEmpty(TestDataDirOverride)
+            ? TestDataDirOverride
+            : SCSKiller.Linux.Core.AppPaths.DataDir;
     public static string GameDir(string gameId) => Path.Combine(DataDir, "games", Sanitize(gameId));
     public static string RecordingPath(string gameId) => Path.Combine(GameDir(gameId), "recording.db");
+    public static string CompileNotePath(string gameId) => Path.Combine(GameDir(gameId), "compile-note.txt");
+
+    /// <summary>Remembers a note about the last compile (null removes it), shown on the game's card while its cache exists.</summary>
+    public static void SaveCompileNote(string gameId, string? note)
+    {
+        try
+        {
+            string path = CompileNotePath(gameId);
+            if (string.IsNullOrWhiteSpace(note))
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+            Directory.CreateDirectory(GameDir(gameId));
+            File.WriteAllText(path, note.Trim());
+        }
+        catch { }
+    }
+
+    public static string? LoadCompileNote(string gameId)
+    {
+        try
+        {
+            string path = CompileNotePath(gameId);
+            if (!File.Exists(path)) return null;
+            string note = File.ReadAllText(path).Trim();
+            return note.Length > 0 ? note : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     static string Sanitize(string id) => string.Concat(id.Select(c => Path.GetInvalidFileNameChars().Contains(c) || c == ':' ? '_' : c));
 
@@ -79,19 +124,11 @@ public static class RecorderManager
         return null;
     }
 
-    /// <summary>The folder of the exe that really runs (an Unreal game's Shipping exe, not its launcher stub).</summary>
+    /// <summary>The folder of the exe that really runs (an Unreal game's Shipping exe or resolved main game binary, not its launcher stub).</summary>
     public static string? ExeDir(GameInfo game)
     {
-        var exe = game.ExecutablePath;
-        if (string.IsNullOrEmpty(exe)) exe = GameEngineDetector.FindExecutable(game.InstallPath) ?? "";
-        if (string.IsNullOrEmpty(exe)) return null;
-        try
-        {
-            var resolved = SCSKiller.Core.Games.GameFiles.GameExe(game.InstallPath, exe);
-            if (!string.IsNullOrEmpty(resolved) && File.Exists(resolved)) exe = resolved;
-        }
-        catch { }
-        return Path.GetDirectoryName(exe);
+        var exe = GameEngineDetector.ResolveRealGameExecutable(game.InstallPath, game.ExecutablePath);
+        return string.IsNullOrEmpty(exe) ? null : Path.GetDirectoryName(exe);
     }
 
     public static bool IsInstalled(GameInfo game) => ExeDir(game) is { } dir && ScsKiller.IsOurProxy(Path.Combine(dir, "d3d12.dll"));
@@ -219,24 +256,94 @@ public static class RecorderManager
         }
     }
 
-    /// <summary>Merges the game folder's shaderless.db into Shaderless's compact copy and empties it (Recordings.Rotate:
-    /// only while the game doesn't hold it). Returns the pipelines added.</summary>
-    public static int Import(GameInfo game)
+    /// <summary>Merges the game folder's shaderless.db into Shaderless's compact copy and empties it (only while the game
+    /// is not running and no external process holds shaderless.db open on Linux). Returns the pipelines added.</summary>
+    public static int Import(GameInfo game, Func<GameInfo, bool>? isGameRunning = null)
     {
         if (ExeDir(game) is not { } dir) return 0;
         MigrateLegacyFiles(dir);
         var inbox = new FileInfo(Path.Combine(dir, "shaderless.db"));
         if (!inbox.Exists || inbox.Length == 0) return 0;
+
+        var checkRunning = isGameRunning ?? (g => ProtonRunner.IsGameRunning(g));
+        try
+        {
+            if (checkRunning(game)) return 0;
+        }
+        catch { }
+
+        if (isGameRunning == null && IsFileOpenByExternalProcess(inbox.FullName))
+            return 0;
+
         var store = RecordingPath(game.Id);
         Directory.CreateDirectory(Path.GetDirectoryName(store)!);
         int added;
         using (Recordings.Lock(store))
         {
+            inbox.Refresh();
+            if (!inbox.Exists || inbox.Length == 0) return 0;
+
             added = Recordings.Merge(store, inbox.FullName, null).Count;
-            Recordings.Rotate(inbox.FullName, inbox.Length);
+
+            bool stillIdle = true;
+            try { stillIdle = !checkRunning(game); } catch { }
+            if (stillIdle && (isGameRunning != null || !IsFileOpenByExternalProcess(inbox.FullName)))
+            {
+                Recordings.Rotate(inbox.FullName, inbox.Length);
+            }
         }
         WriteKeys(game, dir);
         return added;
+    }
+
+    /// <summary>Checks Linux /proc/&lt;pid&gt;/fd symlinks to see if any process other than Shaderless currently holds
+    /// <paramref name="filePath"/> open (for example Wine/wineserver or a running game writing shaderless.db).</summary>
+    internal static bool IsFileOpenByExternalProcess(string filePath, string procRoot = "/proc", int? selfPid = null)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(filePath) || !Directory.Exists(procRoot)) return false;
+            string fullPath = Path.GetFullPath(filePath);
+            string fileNameSuffix = "/" + Path.GetFileName(fullPath);
+            int myPid = selfPid ?? Environment.ProcessId;
+            bool hasTargetInode = ProtonRunner.TryGetLinuxFileIdentity(fullPath, out var targetInode, out _);
+
+            foreach (var pidDir in Directory.EnumerateDirectories(procRoot))
+            {
+                string pidStr = Path.GetFileName(pidDir);
+                if (!int.TryParse(pidStr, out int pid) || pid == myPid) continue;
+
+                string fdDir = Path.Combine(pidDir, "fd");
+                IEnumerable<string> fds;
+                try
+                {
+                    if (!Directory.Exists(fdDir)) continue;
+                    fds = Directory.EnumerateFileSystemEntries(fdDir);
+                }
+                catch { continue; }
+
+                foreach (var fd in fds)
+                {
+                    try
+                    {
+                        string? linkTarget = new FileInfo(fd).LinkTarget;
+                        if (string.IsNullOrEmpty(linkTarget)) continue;
+                        if (string.Equals(linkTarget, fullPath, StringComparison.Ordinal))
+                            return true;
+                        if (hasTargetInode &&
+                            linkTarget.EndsWith(fileNameSuffix, StringComparison.Ordinal) &&
+                            ProtonRunner.TryGetLinuxFileIdentity(linkTarget, out var fdInode, out _) &&
+                            fdInode == targetInode)
+                        {
+                            return true;
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+        return false;
     }
 
     /// <summary>shaderless.keys next to the recorder: what the copy already holds, so the next session records only what's new.</summary>

@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -419,6 +419,15 @@ public sealed class AppStore(string dataDir)
         using (new PathGate(path, wait)) f();
     }
 
+    internal static bool IsFileLockContention(IOException e)
+    {
+        if (e is FileNotFoundException or DirectoryNotFoundException or PathTooLongException or EndOfStreamException)
+            return false;
+        return OperatingSystem.IsWindows()
+            ? (e.HResult & 0xFFFF) is 32 or 33
+            : (e.HResult & 0xFFFF) is 11 or 13 or 32 or 33 or 35 or 0x1620;
+    }
+
     /// <summary>Owns the lock on <paramref name="path"/> every process of this user takes turns on (the app, the CLI, the
     /// scheduled tasks, in any session): <c>&lt;path&gt;.lock</c> opened exclusively, until disposed on the thread that made
     /// it. Re-entrant per thread, checked before any wait. A holder's handle goes when its process does. Waits up to
@@ -431,7 +440,7 @@ public sealed class AppStore(string dataDir)
         public PathGate(string path, TimeSpan? wait = null, CancellationToken ct = default)
         {
             _file = Path.GetFullPath(path) + ".lock";
-            _held ??= new(StringComparer.OrdinalIgnoreCase);
+            _held ??= new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
             if (_held.TryGetValue(_file, out var h))
             {
                 h.Count++;
@@ -446,8 +455,8 @@ public sealed class AppStore(string dataDir)
                     _held[_file] = new(new FileStream(_file, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None));
                     return;
                 }
-                // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION: another holder has it
-                catch (IOException e) when ((e.HResult & 0xFFFF) is 32 or 33 && clock.Elapsed < limit) { }
+                // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION on Windows; EAGAIN / EACCES flock contention on Linux/macOS
+                catch (IOException e) when (IsFileLockContention(e) && clock.Elapsed < limit) { }
         }
 
         public void Dispose()

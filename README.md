@@ -32,7 +32,7 @@ uses**, so the game finds them already compiled.
 |---|---|
 | **Steam** | Works. Tested on this port's main test machine. |
 | **Heroic** | **Epic games:** found, compiled in the game's own prefix, and the cache installed where the game reads it (checked with one game, A Short Hike, where all 2,402 DirectX 11 shaders compile cleanly). Note that 32-bit games use a separate 32-bit NVIDIA driver subfolder, see the DirectX 11 note below. A Heroic 64-bit DirectX 12 game hasn't been tested yet. **GOG / Amazon:** not supported yet. |
-| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (one game, End of Abyss, Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% (one game, see [test results](#test-results-our-own-3-games)). **Games added by their exe** (for example a DRM-free copy): found, compiled, and the cache installed where the game reads it, checked with the game's real settings (one game, Proton-CachyOS; no stutter measurements). **Games from a Lutris installer script:** implemented, not tested. **GOG / other launchers in a Wine prefix:** not found yet. |
+| **Lutris** | **Epic Games Store games** (installed through Lutris): found and compiled (two games, End of Abyss and Phantom Blade Zero, both Unreal Engine 5). The game uses the compiled cache: pipelines it had to compile itself dropped from 94% to 7% on End of Abyss and from 85% to 7% on Phantom Blade Zero (see [test results](#test-results-our-own-5-games)). **Games added by their exe** (for example a DRM-free copy): found, compiled, and the cache installed where the game reads it, checked with the game's real settings (one game, Proton-CachyOS; no stutter measurements). **Games from a Lutris installer script:** implemented, not tested. **GOG / other launchers in a Wine prefix:** not found yet. |
 | **Flatpak versions** of Steam, Heroic and Lutris | **Works.** Discovers games installed in Flatpak Steam (`~/.var/app/com.valvesoftware.Steam`), Flatpak Heroic (`~/.var/app/com.heroicgameslauncher.hgl`) and Flatpak Lutris (`~/.var/app/net.lutris.Lutris`), compiles them in their own prefix and Proton runtime, and links the compiled cache into each Flatpak app's sandbox cache folder. Tested on all 3 Flatpak launchers (*The Witcher 3*, *A Short Hike*, *End of Abyss*). |
 
 **DirectX 11 games:** Supported for **64-bit** DirectX 11 games across all supported engines (Unreal, Unity, FromSoftware, RE Engine, REDengine, Dagor, Northlight, …). Shaderless extracts every DirectX 11 (SM4/SM5 DXBC) shader directly from the game's files (no recording needed) and compiles them through Proton's DXVK into your GPU driver's Vulkan cache. **Known limit for 32-bit (`x86`) games:** our warmer binary (`shaderless_warm.exe`) is 64-bit (`x86_64`), so on NVIDIA it writes into the 64-bit `libnvidia-glcore.so` subfolder inside `GLCache`, whereas a 32-bit game (such as *A Short Hike*) loads 32-bit `libnvidia-glcore.so` and uses a separate 32-bit subfolder inside `GLCache`.
@@ -47,11 +47,11 @@ If your games don't show up, please [open an issue](../../issues) with the launc
 
 Needs Steam with **Proton** (Heroic / Lutris libraries are partly supported, see [Library support](#library-support)), and WebKitGTK (`webkit2gtk-4.1`) for the window.
 
-Download **`Shaderless-v0.2.2-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
+Download **`Shaderless-v0.2.3-beta-linux-x64.tar.gz`** from [**Releases**](https://github.com/cyberps96/Shaderless/releases/latest):
 
 ```bash
-tar -xzf Shaderless-v0.2.2-beta-linux-x64.tar.gz
-cd Shaderless-v0.2.2-beta-linux-x64
+tar -xzf Shaderless-v0.2.3-beta-linux-x64.tar.gz
+cd Shaderless-v0.2.3-beta-linux-x64
 ./run-gui.sh          # launch the app
 ./install-desktop.sh  # optional: adds Shaderless (with its icon) to your app menu and desktop
 ```
@@ -78,6 +78,7 @@ The two Windows-side helpers (`d3d12.dll` recorder, `shaderless_warm.exe` warmer
 3. Click **⚡ Compile** / **Re-Compile**.
 4. Play. What you recorded is now smooth. Leave Record on: each session adds anything new, and the next Re-Compile only compiles the new pipelines (incremental re-compile).
 
+- **Compiling before you've played (no recording yet):** allowed, and it helps partly (on Phantom Blade Zero the first launch's shader bar went from about 30 to 8.5 minutes). For DirectX 12 games whose engine no game has confirmed yet, the card then shows a **Partial** note until you record and Re-Compile. The Re-Compile after recording **adds to** that cache instead of deleting it.
 - **⚙️ Settings:** Open **⚙️ Settings** in the header (or run `./run-cli.sh settings`) to optionally turn on **Record all games automatically** (OFF by default), **Compile automatically after a game closes** (OFF by default), or adjust **Max shader cache size** (10 GB default, up to 500 GB — raises GPU driver cache limits and automatically splits large NVIDIA caches into `<1.85 GB` multi-part files so UE5 games never truncate at 2 GB or evict older shaders).
 - **Stale detection:** After a GPU driver update, Proton update, or game patch, Shaderless marks affected caches as **Stale** so you know when a full **Re-Compile** is needed.
 
@@ -85,15 +86,17 @@ The two Windows-side helpers (`d3d12.dll` recorder, `shaderless_warm.exe` warmer
 
 On Windows with NVIDIA, a shader compiled once works with any pipeline state. On Linux, vkd3d-proton turns every
 DirectX 12 pipeline into a Vulkan pipeline that includes its **full state** (vertex layout, render-target formats,
-blend mode…). Without a recording, Shaderless has to guess that state, and wrong guesses are wasted. The recording
-teaches it the real state, and Shaderless also applies what it learns to shaders you haven't reached yet.
+blend mode…). Without a recording, Shaderless has to guess that state, and on an engine version no game has confirmed
+yet it also has to guess how the game connects its shaders (the root signatures). A guessed compile still helps, but
+only partly. The recording teaches it the real state, and Shaderless also applies what it learns to shaders you haven't
+reached yet.
 
 > **Known limit:** areas you've never visited can still hitch the first time (on Valor Mortis it was short, about one
 > burst while new content streamed in). Keep Record on and Re-Compile, and they get covered.
 
-## Test results (our own, 3 games)
+## Test results (our own, 5 games)
 
-*All 3 games on the same machine: RTX 3070 · NVIDIA 615.78.08 · CachyOS. Timings measured by the recorder itself.
+*All 5 games on the same machine: RTX 3070 · NVIDIA 615.78.08 · CachyOS. Timings measured by the recorder itself.
 "Had to compile" means a pipeline create over 3 ms, the rule SCSKiller uses.*
 
 | Game | Session | Had to compile | Typical create time | Slowest create | Compile time during loading screens |
@@ -106,10 +109,17 @@ teaches it the real state, and Shaderless also applies what it learns to shaders
 | **End of Abyss** (Epic Games Store, through Lutris) | 1: no cache | 94.4% | 44 ms | 5.9 s | — |
 | | 2: after Record + Re-Compile | **6.7%** | **0.28 ms** | **30 ms** | — |
 | | 3: after 2nd Re-Compile, plus a new area | **2.1%** | **0.25 ms** | 289 ms | — |
+| **Phantom Blade Zero** (Epic Games Store, through Lutris) | 1: no cache | 85.3% | 122 ms | 30.8 s | ~30 min |
+| | 2: after Record + Re-Compile | **7.0%** | **0.57 ms** | **0.9 s** | **13 s** |
+| **CONTROL Resonant** (Steam, Proton) | 1: no cache (recording) | 93.7% | 31.6 ms | 4.5 s | 264 s |
+| | 2: after Record + Re-Compile | **36.5%** | **2.1 ms** | **118 ms** | **5.7 s** |
 
 - **The Blood of Dawnwalker** (Unreal Engine 5, GE-Proton 11-7): about 17 minutes in session 1 and 10 minutes in session 2 (~19,800 vs ~19,500 pipeline creates; 99.4% of session 2's creates were already known from the 120,041-pipeline compile).
 - **Valor Mortis** (Unreal Engine 5): about 10 minutes per session. New ray tracing pipelines at load: — / 315 / **11**.
 - **End of Abyss** (Unreal Engine 5, UMU-Proton 10.0-4): sessions 2 and 3 repeat the route of session 1 (about 7,250 pipeline creates each, so the comparison is like for like). Compiles after the first minute of play: 213 / **0** / 60. Session 3 then enters an area the first two never visited, and that is where the remaining hitch is: 58 compiles in one 30-second burst.
+- **Phantom Blade Zero** (Unreal Engine 5, proton-cachyos-slr): the last column is the game's own "Compiling Shaders" bar (session 1: how long it took; session 2: the compile time inside it). Session 1: ~82,900 pipeline creates. Session 2: the game reused its own list and created only ~10,800; gameplay after loading added 2.2 s of compiling in total.
+- **Phantom Blade Zero, compile before the first play (no recording):** on a Steam copy, a compile from the game files alone made the first launch's shader bar take **8.5 minutes instead of ~30** (typical create 17 ms instead of 122 ms). Different copy and Proton version (Steam, Proton 11.0), so compare loosely.
+- **CONTROL Resonant** (Northlight, proton-cachyos-slr): its shaders can't be paired into pipelines from the game files alone, so it needs a recording first (Shaderless says so instead of compiling). About 6 and 8 minutes per session, ~1,400 pipeline creates each; the compile after session 1 covered 1,389 recorded + 206 more pipelines. The last column is the compile time during the first minute (loading into the game): **264 s → 5.7 s**, and the slowest single compile went from 4.5 s to 0.12 s. After that minute, session 2 compiled for 1.3 s in total.
 - One route per game, no frame-time measurements.
 
 > **Caveat:** the game also writes its own shader cache while you play, and that cache was still in place for sessions 2 and 3. So part of the improvement may come from the game's own cache from the previous session, not only from Shaderless. We have not yet run a test that separates the two.

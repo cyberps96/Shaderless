@@ -169,11 +169,13 @@ public class ShaderCompilerCoordinator
 
         string? extractError = null;
         int plannedItems = 0;
+        SCSKiller.Core.PlanCheck? planCheck = null;   // what upstream's Planner.Check says about this plan (partial without a recording?)
 
+        string? resolvedExePath = GameEngineDetector.ResolveRealGameExecutable(game.InstallPath, game.ExecutablePath) ?? game.ExecutablePath;
         if (Directory.Exists(game.InstallPath) &&
-            !string.IsNullOrEmpty(game.ExecutablePath) &&
-            File.Exists(game.ExecutablePath) &&
-            game.ExecutablePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            !string.IsNullOrEmpty(resolvedExePath) &&
+            File.Exists(resolvedExePath) &&
+            resolvedExePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
             // Clean any previous materialized DBs in workingDir so extraction/fallback reflects current install & recordings
             try { if (File.Exists(recDbPath)) File.Delete(recDbPath); } catch { }
@@ -185,7 +187,7 @@ public class ShaderCompilerCoordinator
                 GameSource.Heroic => SCSKiller.Core.Store.Epic,
                 _ => SCSKiller.Core.Store.Manual
             };
-            var scsGame = new SCSKiller.Core.Game(game.RawId, game.Name, scsStore, game.InstallPath, game.ExecutablePath);
+            var scsGame = new SCSKiller.Core.Game(game.RawId, game.Name, scsStore, game.InstallPath, resolvedExePath);
 
             // Always import any finished recording session from the game folder first (works even for unsupported static engines)
             try { RecorderManager.Import(game); } catch { }
@@ -247,6 +249,7 @@ public class ShaderCompilerCoordinator
                     var planCaps = hasDraws ? caps with { StateIndependentCache = false } : caps;
 
                     var plan = await Task.Run(() => planner.Build(scsGame, engineInfo, index, recording, planCaps, workingDir, new Progress<string>(), cancellationToken, maximum: true), cancellationToken);
+                    try { planCheck = planner.Check(scsGame, engineInfo, recording, planCaps); } catch { planCheck = null; }
                     await Task.Run(() => planner.Materialize(plan, scsGame, engineInfo, reader, recording, workingDir, cancellationToken), cancellationToken);
                     plannedItems = (int)Math.Min(int.MaxValue, plan.Stats.Recorded + plan.Stats.Generated + plan.Stats.D3D11Shaders + plan.Stats.MiddlewareItems + plan.Stats.Variants);
                     if (plannedItems > 0)
@@ -277,6 +280,7 @@ public class ShaderCompilerCoordinator
                 {
                     try { if (File.Exists(genDbPath)) File.Delete(genDbPath); } catch { }
                     extractError = null;
+                    planCheck = null;   // compiled exactly what was recorded: nothing guessed
                     plannedItems = standaloneRecorded;
                     estimatedTotal = standaloneRecorded;
                 }
@@ -288,9 +292,12 @@ public class ShaderCompilerCoordinator
 
         if (!hasDb && extractError != null)
         {
-            string friendlyError = antiCheat == SCSKiller.Core.AntiCheat.None
-                ? $"Static shader archives are not directly readable for this engine ({extractError}). Enable ⏺ Record, play once (DX12) to capture pipelines, then click Compile."
-                : $"Failed to extract game shaders: {extractError}";
+            bool needsAesKey = extractError.Contains("needs the game's AES key", StringComparison.OrdinalIgnoreCase);
+            string friendlyError = antiCheat != SCSKiller.Core.AntiCheat.None
+                ? $"Failed to extract game shaders: {extractError}"
+                : needsAesKey
+                    ? $"Encrypted game archives (AES/DRM-protected). Enable ● Record, play once (DX12) to capture pipelines, then click Compile (or save its hex key to ~/.local/share/shaderless/games/{game.Id}/aes.key)."
+                    : $"Static shader archives are not directly readable for this engine ({extractError}). Enable ● Record, play once (DX12) to capture pipelines, then click Compile.";
 
             yield return new CompilationProgress(
                 GameId: game.Id,
@@ -302,6 +309,29 @@ public class ShaderCompilerCoordinator
                 IsComplete: true,
                 Failed: true,
                 ErrorMessage: friendlyError
+            );
+            yield break;
+        }
+
+        // The game files were read but no pipeline could be planned from them (e.g. CONTROL Resonant: 1,000 shader sets,
+        // all left out without a recording). Say so instead of running an empty warm and reporting the estimate as compiled.
+        if (!hasDb)
+        {
+            string nothingMsg = antiCheat != SCSKiller.Core.AntiCheat.None
+                ? "Nothing to compile from the game's files for this engine yet (its shaders can't be paired into pipelines without a recording, and anti-cheat blocks recording)."
+                : "Nothing to compile from the game's files for this engine yet: its shaders can't be paired into pipelines without a recording. Turn on ● Record, play about 5 minutes (DirectX 12), then Compile.";
+            RecorderManager.SaveCompileNote(game.Id, null);
+
+            yield return new CompilationProgress(
+                GameId: game.Id,
+                GameName: game.Name,
+                ProcessedShaders: 0,
+                TotalShaders: 0,
+                Percentage: 0,
+                CurrentAction: nothingMsg,
+                IsComplete: true,
+                Failed: true,
+                ErrorMessage: nothingMsg
             );
             yield break;
         }
@@ -324,6 +354,9 @@ public class ShaderCompilerCoordinator
             alreadyWarmedCount = alreadyWarmed;
         }
 
+        // A DX12 plan made without a (usable) recording is partly guessed: tell the user (Windows shows its "not tested" note)
+        string? partialNote = PartialCompileNote(planCheck, antiCheat);
+
         // Fast-path: if 100% of planned & recorded pipelines are already warmed in the verified on-disk cache
         if (canIncremental && alreadyWarmedCount > 0 && unwarmedCount == 0)
         {
@@ -337,6 +370,7 @@ public class ShaderCompilerCoordinator
             try { ProtonRunner.FinalizeGameDriverCaches(game); } catch { }
 
             RecorderManager.SaveWarmedKeys(game, allPlannedKeys, runtimeStamp, prebuiltWarmedSnapshot: fullWarmedSnapshot);
+            RecorderManager.SaveCompileNote(game.Id, partialNote);
             _gameManager.SaveGameCompiled(
                 game.Id,
                 allPlannedKeys.Count,
@@ -344,7 +378,8 @@ public class ShaderCompilerCoordinator
                 currentProtonStamp,
                 currentGameBuildStamp);
 
-            string upToDateMsg = $"Cache ready: 0 new pipelines ({alreadyWarmedCount:N0} already compiled, {FormatBytes(existingBytes)} on disk, cache verified).";
+            string upToDateMsg = $"Cache ready: 0 new pipelines ({alreadyWarmedCount:N0} already compiled, {FormatBytes(existingBytes)} on disk, cache verified)."
+                + (partialNote != null ? " " + partialNote : "");
             yield return new CompilationProgress(
                 GameId: game.Id,
                 GameName: game.Name,
@@ -374,11 +409,19 @@ public class ShaderCompilerCoordinator
             : null;
         bool hasRecordedDb = File.Exists(recDbPath) && new FileInfo(recDbPath).Length > 0;
         string recordedRebuildSuffix = hasRecordedDb ? " + recorded pipelines" : "";
+
+        // A full compile for the same driver + Proton keeps what is already compiled (a compile from the game files still
+        // helps the game after a recording replans it); only a driver / Proton change, or a cache near the size cap, starts clean.
+        long maxCacheBytes = SettingsManager.Load().MaxCacheSizeBytes;
+        bool preserveExistingCache = ShouldPreserveExistingCache(isIncrementalRun, runtimeRebuildReason, existingBytes, maxCacheBytes);
+
         string warmHeader = isIncrementalRun
             ? $"Warming {unwarmedCount:N0} new pipelines (skipping {alreadyWarmedCount:N0} already compiled) across {threads} CPU threads..."
             : (rebuildPrefix != null
                 ? $"{rebuildPrefix} — rebuilding full cache{recordedRebuildSuffix} across {threads} CPU threads..."
-                : $"Warming GPU driver pipeline cache via Proton across {threads} CPU threads...");
+                : preserveExistingCache
+                    ? $"Warming GPU driver pipeline cache via Proton across {threads} CPU threads (keeping the existing {FormatBytes(existingBytes)} cache)..."
+                    : $"Warming GPU driver pipeline cache via Proton across {threads} CPU threads...");
 
         // Run Proton-powered D3D12/DXR/D3D11 warmer
         yield return new CompilationProgress(
@@ -403,7 +446,8 @@ public class ShaderCompilerCoordinator
                     workingDir,
                     ev => channel.Writer.TryWrite(ev),
                     cancellationToken,
-                    isIncrementalRun);
+                    isIncrementalRun,
+                    preserveExistingCache: preserveExistingCache);
                 channel.Writer.Complete();
                 return ok;
             }
@@ -528,9 +572,11 @@ public class ShaderCompilerCoordinator
                 currentDriverVersion,
                 currentProtonStamp,
                 currentGameBuildStamp);
+            RecorderManager.SaveCompileNote(game.Id, partialNote);
         }
 
-        string finishMessage = FormatCompletionMessage(totalProcessed, failed, cacheBytes, cacheVerified, verifyDetail, alreadyWarmedCount);
+        string finishMessage = FormatCompletionMessage(totalProcessed, failed, cacheBytes, cacheVerified, verifyDetail, alreadyWarmedCount)
+            + (partialNote != null && (success || processed > 0) ? " " + partialNote : "");
 
         yield return new CompilationProgress(
             GameId: game.Id,
@@ -545,6 +591,33 @@ public class ShaderCompilerCoordinator
             FailedShaders: failed,
             CacheVerified: cacheVerified
         );
+    }
+
+    /// <summary>Whether a full (non-incremental) compile keeps the cache already compiled for this same driver + Proton.
+    /// Measured on Phantom Blade Zero: a compile from the game files alone (no recording) cut the first launch's shader
+    /// phase from ~30 to ~8.5 minutes, then the compile planned from the recording deleted it. A runtime change (driver,
+    /// Proton, a truncated legacy cache) still starts clean, and so does a cache already over 3/4 of the size cap.</summary>
+    public static bool ShouldPreserveExistingCache(bool isIncrementalRun, string? runtimeRebuildReason, long existingBytes, long maxCacheBytes)
+    {
+        if (isIncrementalRun) return false;                 // an incremental compile keeps its cache anyway
+        if (!string.IsNullOrEmpty(runtimeRebuildReason)) return false;
+        if (existingBytes <= 0) return false;
+        return maxCacheBytes <= 0 || existingBytes <= maxCacheBytes / 4 * 3;
+    }
+
+    /// <summary>The card note for a compile whose DX12 part was planned without a usable recording, from upstream's
+    /// <see cref="SCSKiller.Core.Planning.Planner.Check"/> (the check behind the Windows app's "not tested on this engine
+    /// version yet" note); null when nothing was guessed (recorded, a confirmed engine, DirectX 11 only).</summary>
+    public static string? PartialCompileNote(SCSKiller.Core.PlanCheck? check, SCSKiller.Core.AntiCheat antiCheat)
+    {
+        if (check == null || check.Readiness == SCSKiller.Core.Readiness.Unsupported) return null;
+        bool partial = check.Readiness == SCSKiller.Core.Readiness.NeedsRecording
+            || check.Reason.Contains(SCSKiller.Core.Planning.Planner.UntestedNote, StringComparison.Ordinal)
+            || check.Reason.Contains(SCSKiller.Core.Planning.Planner.Record, StringComparison.Ordinal);
+        if (!partial) return null;
+        return antiCheat != SCSKiller.Core.AntiCheat.None
+            ? "Partial: compiled from the game's files only (anti-cheat blocks recording), so some stutter may remain."
+            : "Partial: compiled from the game's files only. Turn on ● Record, play once, then Re-Compile to improve it.";
     }
 
     public static string FormatCompletionMessage(int done, int failed, long cacheBytes, bool cacheVerified, string? verifyDetail = null, int previouslyCompiled = 0)

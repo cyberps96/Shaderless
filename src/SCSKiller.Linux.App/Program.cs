@@ -180,12 +180,13 @@ class Program
                 GameInfo target = exitedGame;
                 try
                 {
-                    if (driverBackend != null)
-                    {
-                        var refreshed = await gameManager.ScanAllGamesAsync(driverBackend);
-                        lastKnownGames = refreshed;
-                        target = refreshed.FirstOrDefault(g => g.Id == exitedGame.Id) ?? exitedGame;
-                    }
+                    // Rescan (the exit monitor already imported the finished session) and push it to the window before the
+                    // compile starts, so the card shows the new "Recorded Pipelines" count instead of the pre-launch one.
+                    if (clientAcknowledged)
+                        await SendCurrentStateAsync(waitIfBusy: true);
+                    else if (driverBackend != null)
+                        lastKnownGames = await gameManager.ScanAllGamesAsync(driverBackend);
+                    target = lastKnownGames.FirstOrDefault(g => g.Id == exitedGame.Id) ?? exitedGame;
                 }
                 catch { }
                 await RunGameCompilationAsync(target, ct);
