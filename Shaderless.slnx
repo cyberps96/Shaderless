@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Shaderless.App/Shaderless.App.csproj" />
+    <Project Path="src/Shaderless.Cli/Shaderless.Cli.csproj" />
+    <Project Path="src/Shaderless.Core/Shaderless.Core.csproj" />
+  </Folder>
+  <Folder Name="/upstream/">
+    <Project Path="upstream/Shaderless.Engine/Shaderless.Engine.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Shaderless.Tests/Shaderless.Tests.csproj" />
+  </Folder>
+</Solution>

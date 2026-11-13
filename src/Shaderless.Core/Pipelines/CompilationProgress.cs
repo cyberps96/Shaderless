@@ -1,0 +1,16 @@
+namespace Shaderless.Core.Pipelines;
+
+public record CompilationProgress(
+    string GameId,
+    string GameName,
+    int ProcessedShaders,
+    int TotalShaders,
+    double Percentage,
+    string CurrentAction,
+    bool IsComplete,
+    bool Failed,
+    string? ErrorMessage,
+    int FailedShaders = 0,
+    bool CacheVerified = false
+);
+

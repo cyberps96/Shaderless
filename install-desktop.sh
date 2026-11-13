@@ -15,7 +15,7 @@ cat > "$APPS/shaderless.desktop" <<DESKTOP
 Type=Application
 Name=Shaderless
 GenericName=Shader stutter killer
-Comment=Pre-compile your Proton games' shaders (unofficial Linux port of SCSKiller)
+Comment=Pre-compile your Proton games' shaders on Linux
 Exec="$DIR/run-gui.sh"
 Icon=shaderless
 Terminal=false

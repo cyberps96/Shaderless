@@ -30,7 +30,7 @@ body:
   - type: dropdown
     id: log
     attributes:
-      label: Did scskiller.log appear next to the game's exe after launching with Record on?
+      label: Did shaderless.log appear next to the game's exe after launching with Record on?
       options: ["Yes", "No", "Didn't check"]
     validations:
       required: true
@@ -60,4 +60,4 @@ body:
   - type: textarea
     id: notes
     attributes:
-      label: Anything else (errors, screenshots, the game folder's scskiller.log)
+      label: Anything else (errors, screenshots, the game folder's shaderless.log)

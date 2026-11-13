@@ -1,4 +1,4 @@
-// D3D11 warm: make the driver compile single shaders (scskiller_gen.db '1' items, see proxy.cpp) by using each once.
+// D3D11 warm: make the driver compile single shaders (shaderless_gen.db '1' items) by using each once.
 // Measured (probe11.cpp, NVIDIA 610.88): CreateXShader is lazy, the compile happens at the first draw/dispatch that uses
 // the shader, is cached per shader (not per VS+PS pair) and doesn't depend on blend/RT format/input layout/depth/MSAA.
 // So an item = one draw on a 1x1 target with a generated partner stage (a trivial PS for a VS, a pass-through VS whose
@@ -191,7 +191,7 @@ static bool lines_up(const std::vector<Sig>& in, const std::vector<Sig>& out) {
 
 static ComPtr<ID3DBlob> compile(const std::string& src, const char* target, std::string* err = nullptr) {
     ComPtr<ID3DBlob> code, msg;
-    D3DCompile(src.data(), src.size(), "scskiller", nullptr, nullptr, "main", target, 0, 0, &code, &msg);
+    D3DCompile(src.data(), src.size(), "shaderless", nullptr, nullptr, "main", target, 0, 0, &code, &msg);
     if (msg && err) *err = std::string((const char*)msg->GetBufferPointer(), msg->GetBufferSize());
     return code;
 }

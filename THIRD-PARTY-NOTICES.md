@@ -1,20 +1,21 @@
 ﻿# Third-party notices
 
-SCSKiller ships, downloads or embeds the components below, at the versions in the distribution. Each row names its licence (SPDX id) and links to its text below, where identical texts are listed once.
+Shaderless (a Linux port built on SCSKiller) ships or references the third-party components listed below at the versions resolved by its build. Each row names its licence (SPDX identifier) and links to its licence text below, where identical texts are listed once.
 
-SCSKiller's own licence: GPL-3.0-or-later (LICENSE), with an additional permission under section 7 for Oodle, the Windows App SDK and graphics driver libraries (LICENSE-EXCEPTION.txt).
+Shaderless's own licence: GPL-3.0-or-later (`LICENSE`), with an inherited section 7 additional permission (`LICENSE-EXCEPTION.txt`) from upstream SCSKiller.
 
 ## Components
 
 | Component | Version | Licence | Copyright | Project | Text |
 |---|---|---|---|---|---|
-| .NET runtime (self-contained) | 10.0.12 | MIT | Copyright (c) .NET Foundation and Contributors | https://github.com/dotnet/runtime | [L1](#l1) |
+| .NET runtime (self-contained, when published self-contained) | 10.0.12 | MIT | Copyright (c) .NET Foundation and Contributors | https://github.com/dotnet/runtime | [L1](#l1) |
 | Microsoft.Bcl.Memory | 10.0.12 | MIT | © Microsoft Corporation | https://github.com/dotnet/runtime | [L1](#l1) |
+| Microsoft.Data.Sqlite (+ Core) | 10.0.12 | MIT | © Microsoft Corporation | https://github.com/dotnet/efcore | [L1](#l1) |
 | System.IO.Hashing | 10.0.8 | MIT | © Microsoft Corporation | https://github.com/dotnet/runtime | [L1](#l1) |
 | System.Numerics.Tensors | 10.0.10 | MIT | © Microsoft Corporation | https://github.com/dotnet/runtime | [L1](#l1) |
-| Windows App SDK (Runtime 2.5.1, WinUI 2.3.9, Foundation 2.3.12, Base 2.0.4, Interactive Experiences 2.1.9) | 2.5.1 | LicenseRef-Microsoft-WindowsAppSDK | © Microsoft Corporation | https://github.com/microsoft/windowsappsdk | [L2](#l2) |
-| Microsoft Edge WebView2 SDK | 1.0.3719.77 | BSD-3-Clause | Copyright (C) Microsoft Corporation | https://aka.ms/webview | [L3](#l3) |
-| Microsoft.Windows.SDK.NET (C#/WinRT projection, WinRT.Runtime) | 10.0.26100.57 | LicenseRef-Microsoft-WindowsSDK | © Microsoft Corporation | https://aka.ms/WinSDKLicenseURL | - |
+| Photino.NET | 4.0.16 | Apache-2.0 | Copyright (C) 2025 TryPhotino | https://github.com/tryphotino/photino.NET | [L4](#l4) |
+| Photino.Native | 4.0.22 | Apache-2.0 | Copyright (C) 2025 TryPhotino | https://github.com/tryphotino/photino.Native | [L4](#l4) |
+| SQLitePCLRaw (bundle_e_sqlite3, core, lib.e_sqlite3, provider.e_sqlite3) | 2.1.12 | Apache-2.0 | Copyright 2014-2024 SourceGear, LLC | https://github.com/ericsink/SQLitePCL.raw | [L4](#l4) |
 | CUE4Parse | 1.2.2.202609 | Apache-2.0 | Copyright (c) 2026 FabianFG | https://github.com/FabianFG/CUE4Parse | [L4](#l4) |
 | Blake3.NET | 3.0.2 | BSD-2-Clause | Copyright (c) 2020, Alexandre Mutel | https://github.com/xoofx/Blake3.NET | [L5](#l5) |
 | BouncyCastle.Cryptography | 2.6.2 | MIT | Copyright (c) 2000-2025 The Legion of the Bouncy Castle Inc. | https://www.bouncycastle.org | [L6](#l6) |
@@ -40,37 +41,26 @@ SCSKiller's own licence: GPL-3.0-or-later (LICENSE), with an additional permissi
 | VGAudio | 2.2.1 | MIT | Copyright © 2016 Alex Barney | https://github.com/Thealexbarney/VGAudio | [L23](#l23) |
 | Zlib-ng.NET | 1.2.0 | MIT | Copyright (c) 2025 NotOfficer | https://github.com/NotOfficer/Zlib-ng.NET | [L10](#l10) |
 | ZstdSharp.Port | 0.8.8 | MIT | Copyright (c) 2021 Oleg Stepanischev | https://github.com/oleg-st/ZstdSharp | [L24](#l24) |
-| zlib-ng (zlib-ng2.dll) | 2.3.2 | Zlib | (C) 1995-2024 Jean-loup Gailly and Mark Adler | https://github.com/zlib-ng/zlib-ng | [L25](#l25) |
-| Oodle Data (oodle-data-shared.dll) | 2.9.x (OodleUE build 2026-06-04-1357) | LicenseRef-Oodle-Proprietary | Epic Games Tools LLC (RAD Game Tools) | https://www.radgametools.com/oodle.htm | - |
-| Velopack | 1.2.158 | MIT | Copyright © 2021 Caelan Sayler, © 2024 Velopack Ltd. | https://github.com/velopack/velopack | [L26](#l26) |
 | NSec.Cryptography | 26.4.0 | MIT | Copyright (c) 2026 Klaus Hartke | https://nsec.rocks | [L27](#l27) |
-| libsodium (libsodium.dll) | 1.0.22 | ISC | Copyright (c) 2013-2026 Frank Denis | https://libsodium.org | [L28](#l28) |
-| Vulkan-Headers (proxy/third_party/vulkan) | 1.4 (source tree) | Apache-2.0 | Copyright 2015-2026 The Khronos Group Inc. | https://github.com/KhronosGroup/Vulkan-Headers | [L4](#l4) |
-| AMD GPU Services (amd_ags_x64.dll) | 6.3.1 | MIT | Copyright (c) 2025 Advanced Micro Devices, Inc. | https://github.com/GPUOpen-LibrariesAndSDKs/AGS_SDK | [L29](#l29) |
+| libsodium | 1.0.22 | ISC | Copyright (c) 2013-2026 Frank Denis | https://libsodium.org | [L28](#l28) |
 
 ### Notes
 
-- **.NET runtime (self-contained)**: Its own third-party notices ship as notices\dotnet-THIRD-PARTY-NOTICES.txt.
-- **Windows App SDK (Runtime 2.5.1, WinUI 2.3.9, Foundation 2.3.12, Base 2.0.4, Interactive Experiences 2.1.9)**: Its notices ship as notices\WindowsAppSDK-NOTICE.txt and notices\WinUI-NOTICE.txt.
-- **Microsoft Edge WebView2 SDK**: Its notices ship as notices\WebView2-NOTICE.txt.
-- **Microsoft.Windows.SDK.NET (C#/WinRT projection, WinRT.Runtime)**: Part of the .NET SDK's Windows targeting pack. The package has no licence file. Its terms are at https://aka.ms/WinSDKLicenseURL.
-- **CommunityToolkit.HighPerformance**: Its notices ship as notices\CommunityToolkit-ThirdPartyNotices.txt.
-- **zlib-ng (zlib-ng2.dll)**: Native codec next to both exes, from the Zlib-ng.NET release assets, checked against a pinned SHA-256.
-- **Oodle Data (oodle-data-shared.dll)**: Proprietary software of Epic Games Tools (RAD Game Tools), with no published licence text. SCSKiller has no agreement with Epic or RAD. CUE4Parse downloads it from github.com/WorkingRobot/OodleUE (builds of the Oodle Data source that ships with Unreal Engine, no licence file there), checked against a pinned SHA-256. Releases leave it out (build/publish.ps1 -NoOodle) and the app downloads it on first use. Whether a build that includes it may be redistributed hasn't been established.
-- **Velopack**: the installer and updater. Its Update.exe and Setup.exe come from the same MIT source, built by `vpk pack`.
-- **NSec.Cryptography**: verifies the Ed25519 signature on the update feed. Its NOTICE lists libsodium (ISC) and RFC 6234 sample code (Simplified BSD).
-- **Vulkan-Headers (proxy/third_party/vulkan)**: Source only, for the proxy self-test. Not in the shipped binaries.
-- **AMD GPU Services (amd_ags_x64.dll)**: AMD's signed release DLL, unmodified, in native\, downloaded by the proxy's CMake configure and pinned by SHA-256. scskiller_warm.exe loads it on AMD to create its device under a game's AGS app name.
-- **Game archive formats** (knowledge only, no code, keys or other data copied): the FromSoftware readers follow the layouts SoulsFormats (github.com/soulsmods/SoulsFormatsNEXT) and UXM Selective Unpack (github.com/Nordgaren/UXM-Selective-Unpack) document, and use the shader file names in UXM's archive dictionaries. The RE Engine package reader follows ree-pak-rs (github.com/eigeen/ree-pak-rs) and REE.PAK.Tool. No game key is embedded or shipped. Archive keys come from the user's install or the user, and stay on that PC. Where an install doesn't carry them in the clear (Dark Souls III's archive keys, PRAGMATA's table-key modulus), the app downloads them from those projects' public sources, pinned to a commit (UXM's `UXM/ArchiveKeys.cs`, ree-pak-rs's `ree-pak-core/src/pak/cipher/pak.rs`), and keeps only what opens the user's own archives.
-- **Build-time only, not shipped**: MemoryPack.Generator (source generator, MIT), Microsoft.Windows.SDK.BuildTools and Microsoft.Windows.SDK.BuildTools.MSIX (Microsoft Windows SDK terms), NETStandard.Library / Microsoft.NETCore.Platforms (metapackages).
-- **Native tools** (`d3d12.dll`, `scskiller_warm.exe`): SCSKiller's own code, statically linked with the Microsoft C/C++ runtime (Visual Studio distributable code).
+- **.NET runtime & CommunityToolkit.HighPerformance**: Upstream third-party notices are maintained at https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT and https://github.com/CommunityToolkit/dotnet/blob/main/ThirdPartyNotices.txt.
+- **Photino.NET & Photino.Native**: Provides the Linux desktop WebView shell (`Shaderless.App`). On Linux, `Photino.Native` dynamically loads GTK 3 and WebKitGTK (`libwebkit2gtk-4.1`) from the user's host system (not bundled by Shaderless).
+- **SQLitePCLRaw**: `SQLitePCLRaw.lib.e_sqlite3` embeds SQLite (`libe_sqlite3.so`), which is dedicated to the Public Domain (https://www.sqlite.org/copyright.html). Used to read Lutris game library metadata (`pga.db`).
+- **Codec wrappers (`Oodle.NET`, `OodleSharp`, `Zlib-ng.NET`)**: Transitive managed NuGet dependencies of `CUE4Parse`. Shaderless does **not** bundle or download `oodle-data-shared.dll`, `zlib-ng2.dll`, `amd_ags_x64.dll`, `Windows App SDK`, `WebView2`, or `Velopack` (`Codecs.Load()` is a no-op on Linux).
+- **NSec.Cryptography**: Transitive dependency of `Shaderless.Engine`. Its NOTICE lists libsodium (ISC) and RFC 6234 sample code (Simplified BSD).
+- **Game archive formats** (knowledge only, no code, keys or other data copied): the FromSoftware readers follow the layouts SoulsFormats (github.com/soulsmods/SoulsFormatsNEXT) and UXM Selective Unpack (github.com/Nordgaren/UXM-Selective-Unpack) document, and use the shader file names in UXM's archive dictionaries. The RE Engine package reader follows ree-pak-rs (github.com/eigeen/ree-pak-rs) and REE.PAK.Tool. No game key is embedded or shipped. Archive keys come from the user's install or the user, and stay on that PC. Where an install doesn't carry them in the clear (Dark Souls III's archive keys, PRAGMATA's table-key modulus), the engine downloads them from those projects' public sources, pinned to a commit (UXM's `UXM/ArchiveKeys.cs`, ree-pak-rs's `ree-pak-core/src/pak/cipher/pak.rs`), and keeps only what opens the user's own archives.
+- **Build-time only, not shipped**: `MemoryPack.Generator` (source generator, MIT), `NETStandard.Library` / `Microsoft.NETCore.Platforms` (metapackages), and the test-only `MSTest` package (with its dependencies) in `Shaderless.Tests`.
+- **Native Proton helpers** (`d3d12.dll`, `shaderless_warm.exe`): adapted from SCSKiller's proxy/warmer code under GPL-3.0-or-later and cross-compiled with MinGW-w64 (`x86_64-w64-mingw32-g++ -static -static-libgcc -static-libstdc++`), statically linking `mingw-w64` CRT / `winpthreads` (ZPL-2.1, MIT, BSD-3-Clause, Public Domain) and GCC runtime libraries (`libgcc`, `libstdc++`, GPL-3.0-or-later with GCC Runtime Library Exception 3.1).
 - **known-stutter.json**: facts about games with the source of each (a link or a dated citation). No third-party text is copied.
 
 ## Licence texts
 
 ### L1
 
-Used by: .NET runtime (self-contained), Microsoft.Bcl.Memory, System.IO.Hashing, System.Numerics.Tensors
+Used by: .NET runtime (self-contained), Microsoft.Bcl.Memory, Microsoft.Data.Sqlite (+ Core), System.IO.Hashing, System.Numerics.Tensors
 
 ```text
 The MIT License (MIT)
@@ -98,141 +88,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L2
-
-Used by: Windows App SDK (Runtime 2.5.1, WinUI 2.3.9, Foundation 2.3.12, Base 2.0.4, Interactive Experiences 2.1.9)
-
-```text
-MICROSOFT SOFTWARE LICENSE TERMS
-MICROSOFT WINDOWS APP SDK
-________________________________________
-IF YOU LIVE IN (OR ARE A BUSINESS WITH A PRINCIPAL PLACE OF BUSINESS IN) THE UNITED STATES, PLEASE READ THE “BINDING ARBITRATION AND CLASS ACTION WAIVER” SECTION BELOW. IT AFFECTS HOW DISPUTES ARE RESOLVED.
-________________________________________
-
-These license terms are an agreement between you and Microsoft Corporation (or one of its affiliates). They apply to the software named above and any Microsoft services or software updates (except to the extent such services or updates are accompanied by new or additional terms, in which case those different terms apply prospectively and do not alter your or Microsoft’s rights relating to pre-updated software or services). IF YOU COMPLY WITH THESE LICENSE TERMS, YOU HAVE THE RIGHTS BELOW.  BY USING THE SOFTWARE, YOU ACCEPT THESE TERMS.
-
-1. INSTALLATION AND USE RIGHTS.
-
-    a) General. Subject to the terms of this agreement, you may install and use any number of copies of the software to develop and test your applications, solely for use on Windows. When building Generative AI applications follow the guidelines in https://learn.microsoft.com/windows/ai/rai.
-
-    b) Included Microsoft Applications. The software may include other Microsoft applications. These license terms apply to those included applications, if any, unless other license terms are provided with the other Microsoft applications.
-
-    c) Microsoft Platforms. The software may include components from Microsoft Windows. These components are governed by separate agreements and their own product support policies, as described in the license terms found in the installation directory for that component or in the “Licenses” folder accompanying the software.
-
-2. DATA.
-
-    a) Data Collection. The software may collect information about you and your use of the software, and send that to Microsoft. Microsoft may use this information to provide services and improve our products and services. You may opt-out of many of these scenarios, but not all, as described in the product documentation.  There are also some features in the software that may enable you to collect data from users of your applications. If you use these features to enable data collection in your applications, you must comply with applicable law, including providing appropriate notices to users of your applications. You can learn more about data collection and use in the help documentation and the privacy statement at https://aka.ms/privacy. Your use of the software operates as your consent to these practices.
-
-    b) Processing of Personal Data. To the extent Microsoft is a processor or subprocessor of personal data in connection with the software, Microsoft makes the commitments in the European Union General Data Protection Regulation Terms of the Online Services Terms to all customers effective May 25, 2018, at https://docs.microsoft.com/en-us/legal/gdpr.
-
-3. DISTRIBUTABLE CODE. The software may contain code you are permitted to distribute (i.e. make available for third parties) in applications you develop, as described in this Section.
-
-    a) Distribution Rights. The code and test files described below are distributable if included with the software.
-
-        i. Any files that are binplaced with your application by the WindowsAppSDK NuGet package are, by definition, permitted to be redistributed.  This applies to both framework package dependent and self-contained deployments.
-
-        ii. Image Library. You may copy and distribute images, graphics, and animations in the Image Library as described in the software documentation; and
-
-        iii. Third Party Distribution. You may permit distributors of your applications to copy and distribute any of this distributable code you elect to distribute with your applications.
-
-    b) Distribution Requirements. For any code you distribute, you must:
-
-        i. add significant primary functionality to it in your applications;
-
-        ii. require distributors and external end users to agree to terms that protect it and Microsoft at least as much as this agreement; and
-
-        iii. indemnify, defend, and hold harmless Microsoft from any claims, including attorneys’ fees, related to the distribution or use of your applications, except to the extent that any claim is based solely on the unmodified distributable code.
-
-    c) Distribution Restrictions. You may not:
-
-        i. use Microsoft’s trademarks or trade dress in your application in any way that suggests your application comes from or is endorsed by Microsoft; or
-
-        ii. modify or distribute the source code of any distributable code so that any part of it becomes subject to any license that requires that the distributable code, any other part of the software, or any of Microsoft’s other intellectual property be disclosed or distributed in source code form, or that others have the right to modify it.
-
-4. SCOPE OF LICENSE. The software is licensed, not sold. Microsoft reserves all other rights. Unless applicable law gives you more rights despite this limitation, you will not (and have no right to):
-
-    a) work around any technical limitations in the software that only allow you to use it in certain ways;
-
-    b) reverse engineer, decompile or disassemble the software, or otherwise attempt to derive the source code for the software, except and to the extent required by third party licensing terms governing use of certain open source components that may be included in the software;
-
-    c) remove, minimize, block, or modify any notices of Microsoft or its suppliers in the software;
-
-    d) use the software in any way that is against the law or to create or propagate malware; or
-
-    e) share, publish, distribute, or lease the software (except for any distributable code, subject to the terms above), provide the software as a stand-alone offering for others to use, or transfer the software or this agreement to any third party.
-
-5. EXPORT RESTRICTIONS. You must comply with all domestic and international export laws and regulations that apply to the software, which include restrictions on destinations, end users, and end use. For further information on export restrictions, visit https://aka.ms/exporting.
-
-6. SUPPORT SERVICES. Microsoft is not obligated under this agreement to provide any support services for the software. Any support provided is “as is”, “with all faults”, and without warranty of any kind.
-
-7. UPDATES. The software may periodically check for updates, and download and install them for you. You may obtain updates only from Microsoft or authorized sources. Microsoft may need to update your system to provide you with updates. You agree to receive these automatic updates without any additional notice. Updates may not include or support all existing software features, services, or peripheral devices.
-
-8. BINDING ARBITRATION AND CLASS ACTION WAIVER. This Section applies if you live in (or, if a business, your principal place of business is in) the United States.  If you and Microsoft have a dispute, you and Microsoft agree to try for 60 days to resolve it informally. If you and Microsoft can’t, you and Microsoft agree to binding individual arbitration before the American Arbitration Association under the Federal Arbitration Act (“FAA”), and not to sue in court in front of a judge or jury. Instead, a neutral arbitrator will decide. Class action lawsuits, class-wide arbitrations, private attorney-general actions, and any other proceeding where someone acts in a representative capacity are not allowed; nor is combining individual proceedings without the consent of all parties. The complete Arbitration Agreement contains more terms and is at https://aka.ms/arb-agreement-4. You and Microsoft agree to these terms.
-
-9. ENTIRE AGREEMENT. This agreement, and any other terms Microsoft may provide for supplements, updates, or third-party applications, is the entire agreement for the software.
-
-10. APPLICABLE LAW AND PLACE TO RESOLVE DISPUTES. If you acquired the software in the United States or Canada, the laws of the state or province where you live (or, if a business, where your principal place of business is located) govern the interpretation of this agreement, claims for its breach, and all other claims (including consumer protection, unfair competition, and tort claims), regardless of conflict of laws principles, except that the FAA governs everything related to arbitration. If you acquired the software in any other country, its laws apply, except that the FAA governs everything related to arbitration. If U.S. federal jurisdiction exists, you and Microsoft consent to exclusive jurisdiction and venue in the federal court in King County, Washington for all disputes heard in court (excluding arbitration). If not, you and Microsoft consent to exclusive jurisdiction and venue in the Superior Court of King County, Washington for all disputes heard in court (excluding arbitration).
-
-11. CONSUMER RIGHTS; REGIONAL VARIATIONS. This agreement describes certain legal rights. You may have other rights, including consumer rights, under the laws of your state or country. Separate and apart from your relationship with Microsoft, you may also have rights with respect to the party from which you acquired the software. This agreement does not change those other rights if the laws of your state or country do not permit it to do so. For example, if you acquired the software in one of the below regions, or mandatory country law applies, then the following provisions apply to you:
-
-    a) Australia. You have statutory guarantees under the Australian Consumer Law and nothing in this agreement is intended to affect those rights.
-
-    b) Canada. If you acquired this software in Canada, you may stop receiving updates by turning off the automatic update feature, disconnecting your device from the Internet (if and when you re-connect to the Internet, however, the software will resume checking for and installing updates), or uninstalling the software. The product documentation, if any, may also specify how to turn off updates for your specific device or software.
-
-    c) Germany and Austria.
-
-        i. Warranty. The properly licensed software will perform substantially as described in any Microsoft materials that accompany the software. However, Microsoft gives no contractual guarantee in relation to the licensed software.
-
-        ii. Limitation of Liability. In case of intentional conduct, gross negligence, claims based on the Product Liability Act, as well as, in case of death or personal or physical injury, Microsoft is liable according to the statutory law.
-
-        Subject to the foregoing clause ii., Microsoft will only be liable for slight negligence if Microsoft is in breach of such material contractual obligations, the fulfillment of which facilitate the due performance of this agreement, the breach of which would endanger the purpose of this agreement and the compliance with which a party may constantly trust in (so-called "cardinal obligations"). In other cases of slight negligence, Microsoft will not be liable for slight negligence.
-
-12. DISCLAIMER OF WARRANTY. THE SOFTWARE IS LICENSED “AS IS.” YOU BEAR THE RISK OF USING IT. MICROSOFT GIVES NO EXPRESS WARRANTIES, GUARANTEES, OR CONDITIONS. TO THE EXTENT PERMITTED UNDER APPLICABLE LAWS, MICROSOFT EXCLUDES ALL IMPLIED WARRANTIES, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
-
-13. LIMITATION ON AND EXCLUSION OF DAMAGES. IF YOU HAVE ANY BASIS FOR RECOVERING DAMAGES DESPITE THE PRECEDING DISCLAIMER OF WARRANTY, YOU CAN RECOVER FROM MICROSOFT AND ITS SUPPLIERS ONLY DIRECT DAMAGES UP TO U.S. $5.00. YOU CANNOT RECOVER ANY OTHER DAMAGES, INCLUDING CONSEQUENTIAL, LOST PROFITS, SPECIAL, INDIRECT, OR INCIDENTAL DAMAGES.
-
-This limitation applies to (a) anything related to the software, services, content (including code) on third party Internet sites, or third party applications; and (b) claims for breach of contract, warranty, guarantee, or condition; strict liability, negligence, or other tort; or any other claim; in each case to the extent permitted by applicable law.
-
-It also applies even if Microsoft knew or should have known about the possibility of the damages. The above limitation or exclusion may not apply to you because your state, province, or country may not allow the exclusion or limitation of incidental, consequential, or other damages.
-```
-
-### L3
-
-Used by: Microsoft Edge WebView2 SDK
-
-```text
-Copyright (C) Microsoft Corporation. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-   * Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-   * Redistributions in binary form must reproduce the above
-copyright notice, this list of conditions and the following disclaimer
-in the documentation and/or other materials provided with the
-distribution.
-   * The name of Microsoft Corporation, or the names of its contributors
-may not be used to endorse or promote products derived from this
-software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-```
-
 ### L4
 
-Used by: CUE4Parse, Vulkan-Headers (proxy/third_party/vulkan)
+Used by: Photino.NET, Photino.Native, SQLitePCLRaw (bundle_e_sqlite3, core, lib.e_sqlite3, provider.e_sqlite3), CUE4Parse
 
 ```text
                                  Apache License
@@ -1328,59 +1186,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L25
-
-Used by: zlib-ng (zlib-ng2.dll)
-
-```text
-(C) 1995-2024 Jean-loup Gailly and Mark Adler
-
-This software is provided 'as-is', without any express or implied
-warranty. In no event will the authors be held liable for any damages
-arising from the use of this software.
-
-Permission is granted to anyone to use this software for any purpose,
-including commercial applications, and to alter it and redistribute it
-freely, subject to the following restrictions:
-
-1. The origin of this software must not be misrepresented; you must not
-   claim that you wrote the original software. If you use this software
-   in a product, an acknowledgment in the product documentation would be
-   appreciated but is not required.
-
-2. Altered source versions must be plainly marked as such, and must not be
-   misrepresented as being the original software.
-
-3. This notice may not be removed or altered from any source distribution.
-```
-
-### L26
-
-Used by: Velopack
-
-```text
-Copyright © 2021 Caelan Sayler
-Copyright © 2024 Velopack Ltd.
-
-Permission is hereby granted,  free of charge,  to any person obtaining a
-copy of this software and associated documentation files (the "Software"),
-to deal in the Software without restriction, including without limitation
-the rights to  use, copy, modify, merge, publish, distribute, sublicense,
-and/or sell copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-```
-
 ### L27
 
 Used by: NSec.Cryptography
@@ -1411,7 +1216,7 @@ SOFTWARE.
 
 ### L28
 
-Used by: libsodium (libsodium.dll)
+Used by: libsodium
 
 ```text
 ISC License
@@ -1432,32 +1237,6 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### L29
-
-Used by: AMD GPU Services (amd_ags_x64.dll)
-
-```text
-Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-```
-
 ## Trademarks
 
 - NVIDIA, GeForce and NVIDIA App are trademarks or registered trademarks of NVIDIA Corporation in the U.S. and other countries.
@@ -1475,5 +1254,5 @@ THE SOFTWARE.
 - Ubisoft Connect is a trademark of Ubisoft Entertainment.
 - Battle.net is a trademark or registered trademark of Blizzard Entertainment, Inc.
 - Patreon is a trademark of Patreon, Inc.
-- Game titles shown in SCSKiller, including its list of games known to stutter, are trademarks of their respective publishers.
-- All other trademarks are the property of their respective owners. SCSKiller is not affiliated with or endorsed by any of them.
+- Game titles shown in Shaderless, including its list of games known to stutter, are trademarks of their respective publishers.
+- All other trademarks are the property of their respective owners. Shaderless is not affiliated with or endorsed by any of them.

@@ -1,0 +1,10 @@
+LIBRARY "dxgi.dll"
+EXPORTS
+    CreateDXGIFactory = Proxy_CreateDXGIFactory
+    CreateDXGIFactory1 = Proxy_CreateDXGIFactory1
+    CreateDXGIFactory2 = Proxy_CreateDXGIFactory2
+    DXGIGetDebugInterface1 = Proxy_DXGIGetDebugInterface1
+    DXGIDeclareAdapterRemovalSupport = Proxy_DXGIDeclareAdapterRemovalSupport
+    DXGID3D10CreateDevice = Proxy_DXGID3D10CreateDevice
+    DXGID3D10RegisterLayers = Proxy_DXGID3D10RegisterLayers
+    Shaderless_StartWarm
